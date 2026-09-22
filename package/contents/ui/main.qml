@@ -4,6 +4,7 @@ import QtWebSockets
 import org.kde.kirigami as Kirigami
 import org.kde.plasma.plasmoid
 import org.kde.plasma.components as PlasmaComponents
+import "native" as NativeWallet
 
 PlasmoidItem {
     id: root
@@ -14,7 +15,8 @@ PlasmoidItem {
 
     property bool authenticated: false
     property bool loading: false
-    property string connectionState: i18n("Not configured")
+    property bool walletLoaded: false
+    property string connectionState: i18n("Loading KWallet…")
     property string errorMessage: ""
     property var collection: ({})
     property var growspace: null
@@ -23,12 +25,15 @@ PlasmoidItem {
     property int dataRequestId: 0
     property string lastUpdated: ""
 
-    property string haUrl: plasmoid.configuration.haUrl || ""
-    property string accessToken: plasmoid.configuration.accessToken || ""
-    property string configuredGrowspaceId: plasmoid.configuration.growspaceId || ""
+    readonly property string defaultHaUrl: "http://homeassistant.local:8123"
+    property string haUrl: wallet.url.length > 0 ? wallet.url : defaultHaUrl
+    property string accessToken: wallet.token
+    property string legacyHaUrl: String(plasmoid.configuration.haUrl || "").trim()
+    property string legacyAccessToken: String(plasmoid.configuration.accessToken || "").trim()
+    property string configuredGrowspaceId: String(plasmoid.configuration.growspaceId || "").trim()
     property int refreshSeconds: Math.max(10, plasmoid.configuration.refreshInterval || 30)
     property bool autoConnect: plasmoid.configuration.autoConnect
-    property bool configured: haUrl.trim().length > 0 && accessToken.trim().length > 0
+    property bool configured: walletLoaded && wallet.hasCredentials
     property bool shouldConnect: configured && autoConnect
     property string wsUrl: websocketUrl(haUrl)
 
@@ -46,6 +51,68 @@ PlasmoidItem {
 
     Plasmoid.title: i18n("Growspace Manager")
     Plasmoid.icon: "view-statistics"
+
+    NativeWallet.WalletStore {
+        id: wallet
+
+        onLoadFinished: function(success) {
+            root.walletLoaded = success
+
+            if (!success) {
+                root.connectionState = i18n("KWallet error")
+                root.errorMessage = wallet.errorString
+                return
+            }
+
+            if (!wallet.hasCredentials && root.legacyAccessToken.length > 0) {
+                root.connectionState = i18n("Migrating login to KWallet…")
+                var migrationUrl = root.legacyHaUrl.length > 0
+                    ? root.legacyHaUrl
+                    : root.defaultHaUrl
+                wallet.saveCredentials(migrationUrl, root.legacyAccessToken)
+                return
+            }
+
+            root.reconnect(50)
+        }
+
+        onSaveFinished: function(success) {
+            if (!success) {
+                root.walletLoaded = false
+                root.connectionState = i18n("KWallet error")
+                root.errorMessage = wallet.errorString
+                return
+            }
+
+            root.walletLoaded = true
+
+            // One-time migration cleanup: after KWallet confirms the write,
+            // remove the old plaintext values from this plasmoid instance.
+            if (root.legacyAccessToken.length > 0) {
+                plasmoid.configuration.accessToken = ""
+                plasmoid.configuration.haUrl = ""
+            }
+
+            root.errorMessage = ""
+            root.reconnect(50)
+        }
+
+        onClearFinished: function(success) {
+            if (success) {
+                root.authenticated = false
+                root.collection = ({})
+                root.growspace = null
+                root.selectedGrowspaceId = ""
+                root.connectionState = i18n("Not configured")
+                root.errorMessage = ""
+                socket.active = false
+            } else {
+                root.errorMessage = wallet.errorString
+            }
+        }
+    }
+
+    Component.onCompleted: wallet.load()
 
     function websocketUrl(baseUrl) {
         var base = (baseUrl || "").trim()
@@ -137,7 +204,9 @@ PlasmoidItem {
         dataRequestId = 0
         socket.active = false
 
-        if (shouldConnect) {
+        if (!walletLoaded) {
+            connectionState = i18n("Loading KWallet…")
+        } else if (shouldConnect) {
             reconnectTimer.interval = delay === undefined ? 150 : delay
             reconnectTimer.restart()
         } else if (!configured) {
@@ -189,7 +258,7 @@ PlasmoidItem {
             return
         }
 
-        var wanted = configuredGrowspaceId.trim()
+        var wanted = configuredGrowspaceId
         if (wanted.length > 0 && data[wanted] !== undefined) {
             selectedGrowspaceId = wanted
             growspace = data[wanted]
@@ -211,7 +280,7 @@ PlasmoidItem {
 
         if (Object.keys(collection).length === 0)
             errorMessage = i18n("Growspace Manager returned no growspaces.")
-        else if (configuredGrowspaceId.trim().length === 0 || configuredGrowspaceId.trim() === selectedGrowspaceId)
+        else if (configuredGrowspaceId.length === 0 || configuredGrowspaceId === selectedGrowspaceId)
             errorMessage = ""
     }
 
@@ -261,12 +330,8 @@ PlasmoidItem {
         }
     }
 
-    onHaUrlChanged: reconnect(150)
-    onAccessTokenChanged: reconnect(150)
     onAutoConnectChanged: reconnect(150)
     onConfiguredGrowspaceIdChanged: selectGrowspace()
-
-    Component.onCompleted: reconnect(50)
 
     Timer {
         id: reconnectTimer
@@ -387,7 +452,7 @@ PlasmoidItem {
         }
 
         Rectangle {
-            visible: !root.configured
+            visible: root.walletLoaded && !root.configured
             Layout.fillWidth: true
             implicitHeight: setupColumn.implicitHeight + Kirigami.Units.largeSpacing * 2
             radius: Kirigami.Units.smallSpacing
@@ -403,12 +468,12 @@ PlasmoidItem {
                 anchors.margins: Kirigami.Units.largeSpacing
 
                 PlasmaComponents.Label {
-                    text: i18n("Home Assistant connection required")
+                    text: i18n("Home Assistant login required")
                     font.bold: true
                 }
 
                 PlasmaComponents.Label {
-                    text: i18n("Right-click the widget → Configure Growspace Manager… and enter your Home Assistant URL and long-lived access token. %1", root.configurationDiagnostic)
+                    text: i18n("Configure the shared Home Assistant login once. It will be stored in KWallet and reused by every Growspace Manager widget.")
                     wrapMode: Text.WordWrap
                     Layout.fillWidth: true
                     opacity: 0.75
