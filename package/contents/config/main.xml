@@ -5,12 +5,16 @@
     <kcfgfile name=""/>
 
     <group name="General">
+        <!-- Legacy migration fields. Credentials move to the shared KWallet entry
+             "Growspace Manager Plasma/homeassistant" on first launch of v0.2. -->
         <entry name="haUrl" type="String">
-            <default>http://homeassistant.local:8123</default>
+            <default></default>
         </entry>
         <entry name="accessToken" type="String">
             <default></default>
         </entry>
+
+        <!-- Per-widget settings. -->
         <entry name="growspaceId" type="String">
             <default></default>
         </entry>
