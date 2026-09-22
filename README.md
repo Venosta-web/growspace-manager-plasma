@@ -4,12 +4,15 @@ Native KDE Plasma 6 widget for [Growspace Manager](https://github.com/Venosta-we
 
 ## Current status
 
-The first functional development build is implemented.
+v0.2 adds shared, encrypted Home Assistant credentials through KDE KWallet.
 
-It can:
+The widget can:
 
 - authenticate against Home Assistant over its native WebSocket API
 - call `growspace_manager/get_data`
+- share one Home Assistant URL/token securely across every widget instance
+- keep each widget's growspace selection and refresh settings independent
+- migrate the old per-widget plaintext token into KWallet on first launch
 - select a configured growspace, or automatically use the first available growspace
 - show temperature, humidity, VPD, plant count, stage/week, day/night state and irrigation information
 - show live connection/authentication/error state
@@ -18,58 +21,62 @@ It can:
 
 ## Requirements
 
+Runtime:
+
 - KDE Plasma 6
+- KDE KWallet
 - Growspace Manager installed in Home Assistant
-- a Home Assistant long-lived access token
 - Qt WebSockets QML support
 
-On Kubuntu/Ubuntu, install the QML WebSocket module if it is not already present:
+Development/install dependencies on Kubuntu:
 
 ```bash
-sudo apt install qml6-module-qtwebsockets
+sudo apt install \
+  build-essential cmake extra-cmake-modules \
+  qt6-base-dev qt6-declarative-dev qml6-module-qtwebsockets \
+  libkf6wallet-dev
 ```
+
+The installer compiles a very small native KF6 bridge and bundles it inside the plasmoid. No system-wide custom QML module is installed.
 
 ## Install during development
 
-Clone the repository and run:
-
 ```bash
-chmod +x install.sh
+git pull
 ./install.sh
+systemctl --user restart plasma-plasmashell.service
 ```
 
-Or install manually:
+Then add **Growspace Manager** from Plasma's widget picker.
 
-```bash
-kpackagetool6 --type Plasma/Applet --install package
+## Shared KWallet login
+
+The Home Assistant URL and long-lived token live in the user's KDE network wallet under:
+
+```text
+Folder: Growspace Manager Plasma
+Entry:  homeassistant
 ```
 
-To update an existing development install:
+They are shared by every Growspace Manager plasmoid instance.
 
-```bash
-kpackagetool6 --type Plasma/Applet --upgrade package
-```
+Per-widget configuration contains only:
 
-Then open Plasma's widget picker and add **Growspace Manager**.
+- Growspace ID
+- refresh interval
+- auto-connect/display behavior
 
-## Configuration
+### Migration from v0.1
 
-Right-click the widget and open **Configure Growspace Manager…**.
+If an existing widget still has the old plaintext token in its Plasma configuration, v0.2 does this automatically:
 
-Enter:
+1. opens KWallet
+2. writes the Home Assistant URL and token to the shared KWallet entry
+3. waits for KWallet to confirm the write
+4. clears the old `accessToken` and `haUrl` values from that widget's Plasma config
+5. reconnects using the KWallet credential
 
-1. **Home Assistant URL** — for example `http://homeassistant.local:8123`
-2. **Long-lived access token**
-3. **Growspace ID** — optional; leave blank to use the first growspace returned by Growspace Manager
-4. **Refresh interval**
-
-The widget converts the Home Assistant HTTP(S) URL to the corresponding `ws://` or `wss://` WebSocket endpoint automatically.
-
-## Security note
-
-The development build stores the Home Assistant access token in the local Plasma widget configuration. It is never committed to this repository, but the local storage is **not encrypted**.
-
-KWallet-backed credential storage is the next security milestone before a stable release.
+A second widget can therefore be added without pasting the token again.
 
 ## Data source
 
@@ -83,8 +90,7 @@ The Plasma widget intentionally remains a frontend. Grow logic, automation and d
 
 ## Next milestones
 
-- KWallet credential storage
-- automatic growspace picker populated from the API
+- growspace selector populated automatically from the API
 - Growspace Manager alert display
 - Home Assistant event-driven refresh in addition to periodic polling
 - Rootforge/Growspace Manager branded visual treatment
