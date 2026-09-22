@@ -11,8 +11,10 @@
     "Id": "com.venosta.growspace-manager-plasma",
     "License": "MIT",
     "Name": "Growspace Manager",
-    "Version": "0.1.0",
-    "Website": "https://github.com/Venosta-web/growspace-manager-plasma"
+    "Version": "0.1.1",
+    "Website": "https://github.com/Venosta-web/growspace-manager-plasma",
+    "BugReportUrl": "https://github.com/Venosta-web/growspace-manager-plasma/issues"
   },
-  "X-Plasma-API-Minimum-Version": "6.0"
+  "X-Plasma-API-Minimum-Version": "6.0",
+  "KPackageStructure": "Plasma/Applet"
 }
