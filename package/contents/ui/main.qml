@@ -10,7 +10,9 @@ PlasmoidItem {
     id: root
 
     implicitWidth: 430
-    implicitHeight: 320
+    implicitHeight: 320 + (sensorTanks.length > 0
+        ? 138 * Math.ceil(sensorTanks.length / (width >= 390 ? 2 : 1))
+        : 0)
     preferredRepresentation: fullRepresentation
 
     property bool authenticated: false
@@ -50,6 +52,9 @@ PlasmoidItem {
     property string irrigationText: displayText(valueAt(growspace, ["environment", "irrigation_pump_state"], "unknown"))
     property string nextIrrigationText: formatSchedule(valueAt(growspace, ["irrigation", "next_scheduled_cycle"], null))
     property string stageWeekText: stageWeek()
+    property var irrigationTanks: valueAt(growspace, ["environment", "irrigation_tanks"], [])
+    property var sensorTanks: filteredSensorTanks()
+    property int lowTankCount: warningTankCount()
 
     Plasmoid.title: i18n("Growspace Manager")
     Plasmoid.icon: "view-statistics"
@@ -170,6 +175,30 @@ PlasmoidItem {
                 words[i] = words[i].charAt(0).toUpperCase() + words[i].slice(1)
         }
         return words.join(" ")
+    }
+
+    function filteredSensorTanks() {
+        var tanks = irrigationTanks || []
+        var result = []
+        for (var i = 0; i < tanks.length; ++i) {
+            var tank = tanks[i]
+            if (!tank)
+                continue
+            var entity = String(tank.sensor_entity || "").trim()
+            if (entity.length > 0)
+                result.push(tank)
+        }
+        return result
+    }
+
+    function warningTankCount() {
+        var count = 0
+        var tanks = sensorTanks || []
+        for (var i = 0; i < tanks.length; ++i) {
+            if (tanks[i] && tanks[i].is_warning === true)
+                count++
+        }
+        return count
     }
 
     function formatSchedule(value) {
@@ -594,6 +623,47 @@ PlasmoidItem {
                     PlasmaComponents.Label {
                         text: root.nextIrrigationText
                         font.bold: true
+                    }
+                }
+
+                ColumnLayout {
+                    visible: root.sensorTanks.length > 0
+                    Layout.fillWidth: true
+                    spacing: Kirigami.Units.smallSpacing
+
+                    RowLayout {
+                        Layout.fillWidth: true
+
+                        PlasmaComponents.Label {
+                            text: i18np("%1 tank", "%1 tanks", root.sensorTanks.length)
+                            font.bold: true
+                        }
+
+                        Item { Layout.fillWidth: true }
+
+                        PlasmaComponents.Label {
+                            visible: root.lowTankCount > 0
+                            text: i18np("⚠ %1 low", "⚠ %1 low", root.lowTankCount)
+                            color: Kirigami.Theme.negativeTextColor
+                            font.bold: true
+                            font.pointSize: Kirigami.Theme.smallFont.pointSize
+                        }
+                    }
+
+                    GridLayout {
+                        Layout.fillWidth: true
+                        columns: root.width >= 390 ? 2 : 1
+                        columnSpacing: Kirigami.Units.smallSpacing
+                        rowSpacing: Kirigami.Units.smallSpacing
+
+                        Repeater {
+                            model: root.sensorTanks
+
+                            TankGauge {
+                                tank: modelData
+                                Layout.fillWidth: true
+                            }
+                        }
                     }
                 }
 
