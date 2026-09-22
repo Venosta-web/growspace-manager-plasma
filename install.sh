@@ -29,3 +29,7 @@ kpackagetool6 --type Plasma/Applet --install "$PACKAGE_DIR"
 echo
 echo "Installed: $PLUGIN_ID"
 echo "Open Plasma's Add Widgets dialog and add “Growspace Manager”."
+echo
+echo "Development note: if the widget is already present on the desktop/panel,"
+echo "Plasma may keep the old QML instance in memory after an update."
+echo "Reload it with: systemctl --user restart plasma-plasmashell.service"
