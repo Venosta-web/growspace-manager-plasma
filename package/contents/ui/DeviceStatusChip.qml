@@ -42,7 +42,7 @@ Rectangle {
             opacity: root.unavailable ? 0.35 : (root.active ? 1.0 : 0.62)
 
             RotationAnimator on rotation {
-                running: root.active && root.label === qsTr("Circulation")
+                running: root.active && (root.label === qsTr("Circulation") || root.label === qsTr("Exhaust"))
                 from: 0
                 to: 360
                 duration: 5000
