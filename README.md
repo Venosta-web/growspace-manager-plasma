@@ -12,6 +12,7 @@ The widget can:
 - call `growspace_manager/get_data`
 - share one Home Assistant URL/token securely across every widget instance
 - keep each widget's growspace selection and refresh settings independent
+- fetch available growspaces directly from Growspace Manager and show their user-facing names in a selector
 - migrate the old per-widget plaintext token into KWallet on first launch
 - select a configured growspace, or automatically use the first available growspace
 - show temperature, humidity, VPD, plant count, stage/week, day/night state and irrigation information
@@ -62,7 +63,7 @@ They are shared by every Growspace Manager plasmoid instance.
 
 Per-widget configuration contains only:
 
-- Growspace ID
+- selected growspace (stored internally by ID, shown in the UI by its user-facing name)
 - refresh interval
 - auto-connect/display behavior
 
@@ -90,7 +91,6 @@ The Plasma widget intentionally remains a frontend. Grow logic, automation and d
 
 ## Next milestones
 
-- growspace selector populated automatically from the API
 - Growspace Manager alert display
 - Home Assistant event-driven refresh in addition to periodic polling
 - Rootforge/Growspace Manager branded visual treatment
