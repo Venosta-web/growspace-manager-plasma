@@ -4,3 +4,4 @@
 .DS_Store
 build/
 .cache/
+package/contents/ui/native/libgrowspacewalletplugin.so
