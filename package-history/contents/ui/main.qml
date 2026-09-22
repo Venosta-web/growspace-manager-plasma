@@ -25,6 +25,8 @@ PlasmoidItem {
     property var growspace: null
     property var metricOption: null
     property var historyPoints: []
+    property var lightHistoryPoints: []
+    property var metricContext: ({ "hasContext": false })
 
     property int nextMessageId: 1
     property int dataRequestId: 0
@@ -47,6 +49,15 @@ PlasmoidItem {
     readonly property var latestValue: historyPoints.length > 0
         ? historyPoints[historyPoints.length - 1].value
         : null
+    readonly property string contextualStatus: metricContext && metricContext.hasContext && latestValue !== null
+        ? MetricCatalog.statusForContext(
+            metricContext,
+            latestValue,
+            historyPoints.length > 0 ? historyPoints[historyPoints.length - 1].timestamp : Date.now(),
+            lightHistoryPoints)
+        : "neutral"
+    readonly property string contextualStatusLabel: MetricCatalog.statusLabel(contextualStatus)
+    readonly property string contextSummary: MetricCatalog.contextSummary(metricContext, metricUnit)
 
     Plasmoid.title: i18n("Growspace Manager History")
     Plasmoid.icon: "office-chart-line"
@@ -147,6 +158,8 @@ PlasmoidItem {
 
         loading = true
         historyPoints = []
+        lightHistoryPoints = []
+        metricContext = ({ "hasContext": false })
         metricOption = null
 
         dataRequestId = sendCommand({
@@ -191,6 +204,7 @@ PlasmoidItem {
         }
 
         metricOption = option
+        metricContext = MetricCatalog.contextForOption(growspace, statesById, option)
         requestHistory()
     }
 
@@ -202,9 +216,15 @@ PlasmoidItem {
         var start = new Date(end.getTime() - 24 * 60 * 60 * 1000)
 
         statusText = i18n("Loading 24-hour history…")
+        var entities = [metricOption.entityId]
+        if (metricContext && metricContext.periodic === true
+                && metricContext.lightEntityId
+                && metricContext.lightEntityId !== metricOption.entityId)
+            entities.push(metricContext.lightEntityId)
+
         historyRequestId = sendCommand({
             type: "growspace_manager/get_history_stats",
-            entity_ids: [metricOption.entityId],
+            entity_ids: entities,
             start_time: start.toISOString(),
             end_time: end.toISOString(),
             interval_minutes: 30,
@@ -325,8 +345,17 @@ PlasmoidItem {
                 return
             }
 
-            var raw = (p.result || ({}))[metricOption.entityId] || []
+            var rawResult = p.result || ({})
+            var raw = rawResult[metricOption.entityId] || []
             historyPoints = MetricCatalog.normalizeHistory(raw, metricOption)
+
+            if (metricContext && metricContext.periodic === true && metricContext.lightEntityId) {
+                lightHistoryPoints = MetricCatalog.normalizeAuxHistory(
+                    rawResult[metricContext.lightEntityId] || [],
+                    metricContext.lightEntityId)
+            } else {
+                lightHistoryPoints = []
+            }
             statusText = i18n("Updated %1", Qt.formatTime(new Date(), "HH:mm"))
             errorMessage = ""
         }
@@ -461,10 +490,95 @@ PlasmoidItem {
 
             Item { Layout.fillWidth: true }
 
+            Rectangle {
+                visible: root.contextualStatus !== "neutral"
+                implicitWidth: contextStatusRow.implicitWidth + 16
+                implicitHeight: 26
+                radius: 7
+                color: root.contextualStatus === "danger"
+                    ? Qt.rgba(Kirigami.Theme.negativeTextColor.r,
+                              Kirigami.Theme.negativeTextColor.g,
+                              Kirigami.Theme.negativeTextColor.b, 0.13)
+                    : (root.contextualStatus === "warning"
+                        ? Qt.rgba(Kirigami.Theme.neutralTextColor.r,
+                                  Kirigami.Theme.neutralTextColor.g,
+                                  Kirigami.Theme.neutralTextColor.b, 0.13)
+                        : Qt.rgba(Kirigami.Theme.positiveTextColor.r,
+                                  Kirigami.Theme.positiveTextColor.g,
+                                  Kirigami.Theme.positiveTextColor.b, 0.11))
+                border.width: root.contextualStatus === "danger" ? 1 : 0
+                border.color: Qt.rgba(Kirigami.Theme.negativeTextColor.r,
+                                     Kirigami.Theme.negativeTextColor.g,
+                                     Kirigami.Theme.negativeTextColor.b, 0.45)
+
+                SequentialAnimation on opacity {
+                    running: root.contextualStatus === "danger"
+                    loops: Animation.Infinite
+                    NumberAnimation { to: 0.58; duration: 650 }
+                    NumberAnimation { to: 1.0; duration: 650 }
+                }
+
+                RowLayout {
+                    id: contextStatusRow
+                    anchors.centerIn: parent
+                    spacing: 5
+
+                    Rectangle {
+                        implicitWidth: 7
+                        implicitHeight: 7
+                        radius: 4
+                        color: root.contextualStatus === "danger"
+                            ? Kirigami.Theme.negativeTextColor
+                            : (root.contextualStatus === "warning"
+                                ? Kirigami.Theme.neutralTextColor
+                                : Kirigami.Theme.positiveTextColor)
+
+                        SequentialAnimation on scale {
+                            running: root.contextualStatus === "warning"
+                            loops: Animation.Infinite
+                            NumberAnimation { to: 1.35; duration: 850; easing.type: Easing.InOutSine }
+                            NumberAnimation { to: 1.0; duration: 850; easing.type: Easing.InOutSine }
+                        }
+                    }
+
+                    PlasmaComponents.Label {
+                        text: root.contextualStatusLabel
+                        font.bold: true
+                        color: root.contextualStatus === "danger"
+                            ? Kirigami.Theme.negativeTextColor
+                            : (root.contextualStatus === "warning"
+                                ? Kirigami.Theme.neutralTextColor
+                                : Kirigami.Theme.positiveTextColor)
+                        font.pointSize: Kirigami.Theme.smallFont.pointSize
+                    }
+                }
+            }
+
             PlasmaComponents.Label {
                 text: root.statusText
                 opacity: 0.46
                 font.pointSize: Kirigami.Theme.smallFont.pointSize
+            }
+        }
+
+        RowLayout {
+            visible: root.metricContext && root.metricContext.hasContext
+            Layout.fillWidth: true
+            spacing: 5
+
+            Kirigami.Icon {
+                source: "dialog-information-symbolic"
+                implicitWidth: 14
+                implicitHeight: 14
+                opacity: 0.58
+            }
+
+            PlasmaComponents.Label {
+                Layout.fillWidth: true
+                text: root.contextSummary
+                opacity: 0.58
+                font.pointSize: Kirigami.Theme.smallFont.pointSize
+                elide: Text.ElideRight
             }
         }
 
@@ -494,6 +608,8 @@ PlasmoidItem {
                 fixedMin: root.metricOption ? root.metricOption.axisMin : null
                 fixedMax: root.metricOption ? root.metricOption.axisMax : null
                 minimumSpan: root.metricOption ? Number(root.metricOption.minSpan || 1) : 1
+                metricContext: root.metricContext
+                lightPoints: root.lightHistoryPoints
             }
         }
     }
