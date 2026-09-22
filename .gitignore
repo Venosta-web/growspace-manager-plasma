@@ -5,3 +5,5 @@
 build/
 .cache/
 package/contents/ui/native/libgrowspacewalletplugin.so
+package-irrigation/contents/ui/native/libgrowspacewalletplugin.so
+package-history/contents/ui/native/libgrowspacewalletplugin.so
