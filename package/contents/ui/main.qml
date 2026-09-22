@@ -261,8 +261,20 @@ PlasmoidItem {
             return "—"
 
         var attrs = entity.attributes || ({})
-        if (entity.state === "off")
+        var unit = String(attrs.unit_of_measurement || "")
+
+        if (unit === "%") {
+            var pct = Number(entity.state)
+            return isNaN(pct) ? "—" : Math.round(pct) + "%"
+        }
+
+        // Dimmable light entities can retain their last brightness while off.
+        // The actual on/off state wins so an off grow light never looks active.
+        if (entity.state === "off") {
+            if (attrs.supported_color_modes !== undefined || attrs.brightness !== undefined)
+                return "0%"
             return "Off"
+        }
 
         if (attrs.brightness !== undefined && attrs.brightness !== null) {
             var brightness = Number(attrs.brightness)
@@ -270,16 +282,13 @@ PlasmoidItem {
                 return Math.round(brightness / 255 * 100) + "%"
         }
 
-        var unit = String(attrs.unit_of_measurement || "")
-        var n = Number(entity.state)
-        if (!isNaN(n)) {
-            if (unit === "%" || n > 10)
-                return Math.round(n) + "%"
-            return String(Math.round(n))
-        }
-
         if (entity.state === "on")
             return "On"
+
+        var n = Number(entity.state)
+        if (!isNaN(n))
+            return String(Math.round(n))
+
         return displayText(entity.state)
     }
 
@@ -373,8 +382,17 @@ PlasmoidItem {
         var env = valueAt(growspace, ["environment"], ({}))
         var chips = []
 
+        // Match the Lovelace DeviceState resolver: existing growspaces often
+        // use light_sensors/light_sensor for the actual light entity as well as
+        // day/night detection. Newer configs may additionally use
+        // growlight_entities. Keep AC Infinity power entities as a Plasma-side
+        // fallback because their grow-light bundle has no fan-style readback.
         var lightIds = concatUnique(
-            env.growlight_entities || [],
+            env.light_sensors || (env.light_sensor ? [env.light_sensor] : []),
+            env.growlight_entities || []
+        )
+        lightIds = concatUnique(
+            lightIds,
             bundleEntityIds(["environment", "growlight_ac_infinity_devices"], "power_entity")
         )
         var exhaustIds = concatUnique(
