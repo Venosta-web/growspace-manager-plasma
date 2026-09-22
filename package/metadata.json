@@ -1,0 +1,18 @@
+{
+  "KPlugin": {
+    "Authors": [
+      {
+        "Name": "Venosta-web"
+      }
+    ],
+    "Category": "System Information",
+    "Description": "Live Growspace Manager data on the KDE Plasma desktop and panel",
+    "Icon": "view-statistics",
+    "Id": "com.venosta.growspace-manager-plasma",
+    "License": "MIT",
+    "Name": "Growspace Manager",
+    "Version": "0.1.0",
+    "Website": "https://github.com/Venosta-web/growspace-manager-plasma"
+  },
+  "X-Plasma-API-Minimum-Version": "6.0"
+}
