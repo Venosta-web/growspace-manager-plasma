@@ -10,15 +10,27 @@ Item {
     property string lightsOn: ""
     property var targetVwc: null
     property var maintenanceDryback: null
+    property var strategy: null
+    property var irrigationConfig: null
+    property real dayHours: 12
     property bool showEc: true
 
     property var hoverSample: null
     property real hoverX: -1
 
     readonly property double dayMs: 24 * 60 * 60 * 1000
-    readonly property double anchorMs: {
+    readonly property double lightsOnMs: {
         var parsed = Date.parse(lightsOn)
-        return isNaN(parsed) ? 0 : parsed - 2 * 60 * 60 * 1000
+        return isNaN(parsed) ? 0 : parsed
+    }
+    readonly property double anchorMs: lightsOnMs > 0 ? lightsOnMs - 2 * 60 * 60 * 1000 : 0
+    readonly property var phases: buildPhases()
+    readonly property var shots: buildShots()
+    readonly property string currentPhaseLabel: currentPhase()
+
+    function numberOr(value, fallback) {
+        var n = Number(value)
+        return isNaN(n) ? fallback : n
     }
 
     function numericPoints(series) {
@@ -44,6 +56,145 @@ Item {
     function lastValue(series) {
         var points = numericPoints(series)
         return points.length > 0 ? points[points.length - 1].value : null
+    }
+
+    function saturationCrossing(startMs, endMs, target) {
+        var points = numericPoints(soilMoisture)
+        for (var i = 0; i < points.length; ++i) {
+            if (points[i].timestamp < startMs || points[i].timestamp > endMs)
+                continue
+            if (points[i].value >= target)
+                return points[i].timestamp
+        }
+        return 0
+    }
+
+    function buildPhases() {
+        if (!strategy || strategy.enabled !== true || lightsOnMs <= 0)
+            return []
+
+        var litHours = Math.max(0.1, numberOr(dayHours, 12))
+        var lightsOff = lightsOnMs + litHours * 60 * 60 * 1000
+        var p0Minutes = Math.max(0, numberOr(strategy.p0_duration_minutes, 60))
+        var stopBeforeOff = Math.max(0, numberOr(strategy.p2_stop_before_lights_off_minutes, 120))
+        var p0End = lightsOnMs + p0Minutes * 60 * 1000
+        var scheduledP3 = Math.max(p0End, lightsOff - stopBeforeOff * 60 * 1000)
+        var p3Start = scheduledP3
+
+        var config = irrigationConfig || ({})
+        if (config.active_steering_phase === "p3" && config.phase_changed_at) {
+            var actualP3 = Date.parse(config.phase_changed_at)
+            if (!isNaN(actualP3) && actualP3 >= p0End && actualP3 <= scheduledP3)
+                p3Start = actualP3
+        }
+
+        var target = numberOr(strategy.target_vwc_percent, numberOr(targetVwc, 45))
+        var crossing = saturationCrossing(p0End, lightsOff, target)
+        var p1End = crossing > 0 ? Math.min(crossing, p3Start) : p3Start
+        p1End = Math.max(p0End, p1End)
+
+        return [
+            {
+                "id": "p0",
+                "label": "P0",
+                "name": qsTr("Activation"),
+                "target": qsTr("No shots"),
+                "startMs": lightsOnMs,
+                "endMs": p0End
+            },
+            {
+                "id": "p1",
+                "label": "P1",
+                "name": qsTr("Saturation"),
+                "target": qsTr("Reach FC"),
+                "startMs": p0End,
+                "endMs": p1End
+            },
+            {
+                "id": "p2",
+                "label": "P2",
+                "name": qsTr("Maintenance"),
+                "target": qsTr("Runoff target"),
+                "startMs": p1End,
+                "endMs": p3Start
+            },
+            {
+                "id": "p3",
+                "label": "P3",
+                "name": qsTr("Dryback"),
+                "target": "−" + numberOr(strategy.maintenance_dryback_percent,
+                                        numberOr(maintenanceDryback, 3)).toFixed(1) + "% VWC",
+                "startMs": p3Start,
+                "endMs": lightsOff
+            }
+        ]
+    }
+
+    function buildShots() {
+        if (!strategy || strategy.enabled !== true || lightsOnMs <= 0)
+            return []
+
+        var intervalMinutes = numberOr(strategy.shot_interval_minutes, 0)
+        var durationSeconds = numberOr(strategy.shot_duration_seconds, 0)
+        if (intervalMinutes <= 0 || durationSeconds <= 0)
+            return []
+
+        var litHours = Math.max(0.1, numberOr(dayHours, 12))
+        var p0Minutes = Math.max(0, numberOr(strategy.p0_duration_minutes, 0))
+        var stopBeforeOff = Math.max(0, numberOr(strategy.p2_stop_before_lights_off_minutes, 0))
+        var firstShot = lightsOnMs + p0Minutes * 60 * 1000
+        var cutoff = lightsOnMs + litHours * 60 * 60 * 1000 - stopBeforeOff * 60 * 1000
+        var intervalMs = intervalMinutes * 60 * 1000
+
+        var p1End = cutoff
+        var phaseList = phases
+        for (var p = 0; p < phaseList.length; ++p) {
+            if (phaseList[p].id === "p1") {
+                p1End = phaseList[p].endMs
+                break
+            }
+        }
+
+        var result = []
+        for (var t = firstShot; t < cutoff; t += intervalMs) {
+            result.push({
+                "timestamp": t,
+                "duration": durationSeconds,
+                "phase": t < p1End ? "p1" : "p2",
+                "time": formatTime(t)
+            })
+        }
+        return result
+    }
+
+    function currentPhase() {
+        var now = Date.now()
+        var list = phases
+        for (var i = 0; i < list.length; ++i) {
+            if (now >= list[i].startMs && now < list[i].endMs)
+                return list[i].label + " · " + list[i].name
+        }
+        return ""
+    }
+
+    function phaseColor(id) {
+        if (id === "p0")
+            return Kirigami.Theme.neutralTextColor
+        if (id === "p1")
+            return Kirigami.Theme.highlightColor
+        if (id === "p2")
+            return Kirigami.Theme.positiveTextColor
+        return Kirigami.Theme.negativeTextColor
+    }
+
+    function alphaColor(color, alpha) {
+        return Qt.rgba(color.r, color.g, color.b, alpha)
+    }
+
+    function timelineRatio(timestamp) {
+        if (anchorMs <= 0)
+            return 0
+        return Math.max(0, Math.min(1, (timestamp - anchorMs) / dayMs))
     }
 
     function vwcDomain() {
@@ -143,11 +294,140 @@ Item {
     onLightsOnChanged: canvas.requestPaint()
     onTargetVwcChanged: canvas.requestPaint()
     onMaintenanceDrybackChanged: canvas.requestPaint()
+    onStrategyChanged: canvas.requestPaint()
+    onIrrigationConfigChanged: canvas.requestPaint()
+    onDayHoursChanged: canvas.requestPaint()
     onShowEcChanged: canvas.requestPaint()
+
+    Rectangle {
+        id: phaseStrip
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.leftMargin: 42
+        anchors.rightMargin: root.showEc ? 42 : 12
+        height: 44
+        radius: 5
+        color: Qt.rgba(0, 0, 0, 0.16)
+        border.width: 1
+        border.color: root.alphaColor(Kirigami.Theme.textColor, 0.09)
+        clip: true
+
+        Text {
+            visible: root.phases.length === 0
+            anchors.centerIn: parent
+            text: qsTr("No crop-steering strategy configured")
+            color: Kirigami.Theme.disabledTextColor
+            font.pixelSize: 10
+        }
+
+        Repeater {
+            model: root.phases
+
+            Rectangle {
+                required property var modelData
+
+                visible: modelData.endMs > modelData.startMs
+                x: root.timelineRatio(modelData.startMs) * phaseStrip.width
+                width: Math.max(0, root.timelineRatio(modelData.endMs) * phaseStrip.width - x)
+                height: phaseStrip.height
+                color: root.alphaColor(root.phaseColor(modelData.id),
+                                       root.currentPhaseLabel.indexOf(modelData.label) === 0 ? 0.28 : 0.14)
+                border.width: 1
+                border.color: root.alphaColor(root.phaseColor(modelData.id), 0.55)
+                clip: true
+
+                Column {
+                    anchors.left: parent.left
+                    anchors.leftMargin: 6
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 1
+
+                    Text {
+                        width: parent.width
+                        text: parent.parent.width > 86
+                            ? modelData.label + " · " + modelData.name
+                            : modelData.label
+                        color: root.phaseColor(modelData.id)
+                        font.bold: true
+                        font.pixelSize: 10
+                        elide: Text.ElideRight
+                    }
+
+                    Text {
+                        visible: parent.parent.width > 115
+                        width: parent.width
+                        text: root.formatTime(modelData.startMs)
+                            + "–" + root.formatTime(modelData.endMs)
+                            + " · " + modelData.target
+                        color: root.alphaColor(Kirigami.Theme.textColor, 0.65)
+                        font.pixelSize: 9
+                        elide: Text.ElideRight
+                    }
+                }
+            }
+        }
+    }
+
+    Item {
+        id: shotTrack
+        anchors.top: phaseStrip.bottom
+        anchors.topMargin: 4
+        anchors.left: phaseStrip.left
+        anchors.right: phaseStrip.right
+        height: 25
+        clip: true
+
+        Rectangle {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            height: 1
+            color: root.alphaColor(Kirigami.Theme.textColor, 0.10)
+        }
+
+        Text {
+            visible: root.phases.length > 0 && root.shots.length === 0
+            anchors.centerIn: parent
+            text: qsTr("No scheduled crop-steering shots")
+            color: Kirigami.Theme.disabledTextColor
+            font.pixelSize: 9
+        }
+
+        Repeater {
+            model: root.shots
+
+            Rectangle {
+                required property var modelData
+
+                width: 4
+                height: modelData.phase === "p1" ? 16 : 11
+                radius: 2
+                x: Math.max(0, Math.min(shotTrack.width - width,
+                                        root.timelineRatio(modelData.timestamp) * shotTrack.width - width / 2))
+                anchors.verticalCenter: parent.verticalCenter
+                color: root.phaseColor(modelData.phase)
+                opacity: modelData.timestamp < Date.now() ? 0.35 : 0.95
+            }
+        }
+
+        Text {
+            anchors.left: parent.left
+            anchors.bottom: parent.bottom
+            text: qsTr("Shots")
+            color: root.alphaColor(Kirigami.Theme.textColor, 0.40)
+            font.pixelSize: 8
+        }
+    }
 
     Item {
         id: plot
-        anchors.fill: parent
+        anchors.top: shotTrack.bottom
+        anchors.topMargin: 2
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
 
         readonly property real leftPadding: 42
         readonly property real rightPadding: root.showEc ? 42 : 12
@@ -190,7 +470,6 @@ Item {
                         * plot.plotHeight
                 }
 
-                // Grid and Y labels
                 ctx.font = "10px sans-serif"
                 ctx.lineWidth = 1
                 for (var i = 0; i <= 4; ++i) {
@@ -214,7 +493,6 @@ Item {
                     }
                 }
 
-                // Time grid: anchor, +6h, +12h, +18h, +24h.
                 if (root.anchorMs > 0) {
                     for (var h = 0; h <= 24; h += 6) {
                         var timestamp = root.anchorMs + h * 60 * 60 * 1000
@@ -306,7 +584,6 @@ Item {
                     drawSeries(root.bulkEc, yEc, Kirigami.Theme.neutralTextColor, 1.6)
                 }
 
-                // Current-time marker within the photoperiod day.
                 var now = Date.now()
                 if (root.anchorMs > 0 && now >= root.anchorMs && now <= root.anchorMs + root.dayMs) {
                     var nowX = xAt(now)
