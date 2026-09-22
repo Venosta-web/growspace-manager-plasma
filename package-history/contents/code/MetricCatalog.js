@@ -245,3 +245,401 @@ function normalizeHistory(points, option) {
     result.sort(function(a, b) { return a.timestamp - b.timestamp })
     return result
 }
+
+
+function _finite(value) {
+    var n = Number(value)
+    return isNaN(n) ? null : n
+}
+
+function _band(minValue, maxValue, label) {
+    var min = _finite(minValue)
+    var max = _finite(maxValue)
+    if (min === null || max === null || !(max > min))
+        return null
+    return { min: min, max: max, label: label || "Target" }
+}
+
+function _limit(value, side, status, label) {
+    var n = _finite(value)
+    if (n === null)
+        return null
+    return {
+        value: n,
+        side: side,
+        status: status,
+        label: label || (status === "danger" ? "Critical" : "Warning")
+    }
+}
+
+function _guide(value, label, tolerance) {
+    var n = _finite(value)
+    if (n === null || n <= 0)
+        return null
+    var t = _finite(tolerance)
+    return {
+        value: n,
+        label: label || "Setpoint",
+        tolerance: t !== null && t > 0 ? t : null
+    }
+}
+
+function _pushIf(array, value) {
+    if (value)
+        array.push(value)
+}
+
+function _fanGuides(context, env, metricKey) {
+    var signal = metricKey === "temperature"
+        ? "temperature"
+        : (metricKey === "humidity" ? "humidity" : (metricKey === "vpd" ? "vpd" : ""))
+    if (!signal)
+        return
+
+    var exhaust = env.exhaust_fan_config || ({})
+    if (exhaust.enabled === true) {
+        _pushIf(context.guides, _guide(
+            exhaust[signal + "_target"],
+            "Exhaust setpoint",
+            exhaust[signal + "_tolerance"]
+        ))
+    }
+
+    var circulation = env.circulation_fan_config || ({})
+    if (circulation.enabled === true
+            && String(circulation.regulation_mode || "") === signal) {
+        _pushIf(context.guides, _guide(
+            circulation[signal + "_target"],
+            "Circulation setpoint",
+            circulation[signal + "_tolerance"]
+        ))
+    }
+}
+
+function _stageCandidates(stage) {
+    var raw = String(stage || "")
+    var result = [raw]
+    if (raw.indexOf("flower_") === 0)
+        result.push("flower")
+    if (raw.indexOf("veg_") === 0)
+        result.push("veg")
+    return result
+}
+
+function contextForOption(growspace, states, option) {
+    var context = {
+        hasContext: false,
+        metricKey: option ? option.metricKey : "",
+        unit: option ? option.unit : "",
+        periodic: false,
+        currentPeriod: "day",
+        lightEntityId: "",
+        bands: [],
+        limits: [],
+        guides: [],
+        safeStatus: "neutral"
+    }
+
+    if (!growspace || !option)
+        return context
+
+    var env = growspace.environment || ({})
+    var irrigation = growspace.irrigation || ({})
+    var config = irrigation.irrigation_config || ({})
+    var strategy = irrigation.irrigation_strategy || ({})
+    var metrics = growspace.metrics || ({})
+    var key = option.metricKey
+
+    if (key === "vpd") {
+        var dayBand = _band(metrics.day_vpd_target_min, metrics.day_vpd_target_max, "Day target")
+        var nightBand = _band(metrics.night_vpd_target_min, metrics.night_vpd_target_max, "Night target")
+        var dayDangerLow = _finite(metrics.day_vpd_danger_min)
+        var dayDangerHigh = _finite(metrics.day_vpd_danger_max)
+        var nightDangerLow = _finite(metrics.night_vpd_danger_min)
+        var nightDangerHigh = _finite(metrics.night_vpd_danger_max)
+
+        if (dayBand && nightBand && dayDangerLow !== null && dayDangerHigh !== null
+                && nightDangerLow !== null && nightDangerHigh !== null) {
+            context.periodic = true
+            context.currentPeriod = metrics.is_day === false ? "night" : "day"
+            context.day = {
+                optimalMin: dayBand.min,
+                optimalMax: dayBand.max,
+                dangerMin: dayDangerLow,
+                dangerMax: dayDangerHigh
+            }
+            context.night = {
+                optimalMin: nightBand.min,
+                optimalMax: nightBand.max,
+                dangerMin: nightDangerLow,
+                dangerMax: nightDangerHigh
+            }
+
+            var lightIds = _unique(
+                _array(env.light_sensors)
+                    .concat(_array(env.light_sensor))
+                    .concat(_array(env.growlight_entities))
+            )
+            context.lightEntityId = lightIds.length > 0 ? lightIds[0] : ""
+            context.hasContext = true
+            context.safeStatus = "optimal"
+        }
+
+        _fanGuides(context, env, key)
+        if (context.guides.length > 0)
+            context.hasContext = true
+        return context
+    }
+
+    if (key === "soil_moisture"
+            && env.soil_moisture_band_compatible === true) {
+        _pushIf(context.bands, _band(
+            (env.soil_moisture_band || {}).min,
+            (env.soil_moisture_band || {}).max,
+            "Moisture target"
+        ))
+    }
+
+    if (key === "pore_ec") {
+        _pushIf(context.bands, _band(
+            strategy.pore_ec_target_min,
+            strategy.pore_ec_target_max,
+            "Pore EC target"
+        ))
+    }
+
+    if (key === "feed_ec") {
+        var ranges = _array(config.ec_target_ranges)
+        var candidates = _stageCandidates(metrics.granular_stage)
+        for (var r = 0; r < ranges.length; ++r) {
+            var range = ranges[r] || ({})
+            if (candidates.indexOf(String(range.stage || "")) >= 0) {
+                _pushIf(context.bands, _band(
+                    range.feed_ec_min !== undefined ? range.feed_ec_min : range.min_ec,
+                    range.feed_ec_max !== undefined ? range.feed_ec_max : range.max_ec,
+                    "Feed EC target"
+                ))
+                break
+            }
+        }
+    }
+
+    if (key === "irrigation_tank_level") {
+        var tanks = _array(env.irrigation_tanks)
+        for (var t = 0; t < tanks.length; ++t) {
+            var tank = tanks[t] || ({})
+            if (String(tank.sensor_entity || "") === String(option.entityId || "")) {
+                _pushIf(context.limits, _limit(
+                    tank.warning_level,
+                    "lower",
+                    "warning",
+                    "Low tank"
+                ))
+                context.safeStatus = "optimal"
+                break
+            }
+        }
+    }
+
+    if (key === "runoff_ec") {
+        _pushIf(context.limits, _limit(
+            config.halt_on_runoff_ec_threshold,
+            "upper",
+            "danger",
+            "Runoff EC halt"
+        ))
+        if (context.limits.length > 0)
+            context.safeStatus = "optimal"
+    }
+
+    if (key === "temperature") {
+        var fanConfigs = [
+            env.circulation_fan_config || ({}),
+            env.exhaust_fan_config || ({})
+        ]
+        for (var fc = 0; fc < fanConfigs.length; ++fc) {
+            _pushIf(context.limits, _limit(
+                fanConfigs[fc].critical_temp_low,
+                "lower",
+                "danger",
+                "Critical low"
+            ))
+            _pushIf(context.limits, _limit(
+                fanConfigs[fc].critical_temp_high,
+                "upper",
+                "danger",
+                "Critical high"
+            ))
+        }
+    }
+
+    _fanGuides(context, env, key)
+
+    context.hasContext = context.bands.length > 0
+        || context.limits.length > 0
+        || context.guides.length > 0
+
+    return context
+}
+
+function normalizeAuxHistory(points, entityId) {
+    return normalizeHistory(points, {
+        entityId: entityId,
+        step: true,
+        axisMin: 0,
+        axisMax: 1,
+        unit: ""
+    })
+}
+
+function periodForTimestamp(context, timestamp, lightPoints) {
+    if (!context || context.periodic !== true)
+        return "day"
+
+    if (!lightPoints || lightPoints.length === 0)
+        return context.currentPeriod || "day"
+
+    var candidate = null
+    for (var i = 0; i < lightPoints.length; ++i) {
+        if (lightPoints[i].timestamp <= timestamp)
+            candidate = lightPoints[i]
+        else
+            break
+    }
+
+    if (!candidate)
+        candidate = lightPoints[0]
+
+    return Number(candidate.value) > 0 ? "day" : "night"
+}
+
+function thresholdsForTimestamp(context, timestamp, lightPoints) {
+    if (!context || context.periodic !== true)
+        return null
+    var period = periodForTimestamp(context, timestamp, lightPoints)
+    return context[period] || context.day || null
+}
+
+function _crossedLimit(limit, value) {
+    if (!limit)
+        return false
+    if (limit.side === "lower")
+        return value <= limit.value
+    return value >= limit.value
+}
+
+function statusForContext(context, value, timestamp, lightPoints) {
+    var n = Number(value)
+    if (!context || !context.hasContext || isNaN(n))
+        return "neutral"
+
+    if (context.periodic === true) {
+        var thresholds = thresholdsForTimestamp(context, timestamp, lightPoints)
+        if (!thresholds)
+            return "neutral"
+        if (n < thresholds.dangerMin || n > thresholds.dangerMax)
+            return "danger"
+        if (n < thresholds.optimalMin || n > thresholds.optimalMax)
+            return "warning"
+        return "optimal"
+    }
+
+    var result = context.safeStatus || "neutral"
+
+    for (var i = 0; i < context.limits.length; ++i) {
+        var limit = context.limits[i]
+        if (_crossedLimit(limit, n)) {
+            if (limit.status === "danger")
+                return "danger"
+            result = "warning"
+        }
+    }
+
+    if (context.bands.length > 0) {
+        var inBand = false
+        for (var b = 0; b < context.bands.length; ++b) {
+            if (n >= context.bands[b].min && n <= context.bands[b].max) {
+                inBand = true
+                break
+            }
+        }
+        if (inBand)
+            return "optimal"
+        if (result !== "danger")
+            return "warning"
+    }
+
+    return result
+}
+
+function statusLabel(status) {
+    if (status === "optimal")
+        return "Optimal"
+    if (status === "warning")
+        return "Warning"
+    if (status === "danger")
+        return "Danger"
+    return ""
+}
+
+function _numberText(value) {
+    var n = Number(value)
+    if (isNaN(n))
+        return ""
+    if (Math.abs(n) >= 100)
+        return String(Math.round(n))
+    if (Math.abs(n) >= 10)
+        return n.toFixed(1)
+    return n.toFixed(2)
+}
+
+function contextSummary(context, unit) {
+    if (!context || !context.hasContext)
+        return ""
+
+    var suffix = unit ? " " + unit : ""
+
+    if (context.periodic === true) {
+        var period = context.currentPeriod || "day"
+        var t = context[period] || context.day
+        if (t)
+            return (period === "night" ? "Night" : "Day")
+                + " target "
+                + _numberText(t.optimalMin) + "–" + _numberText(t.optimalMax) + suffix
+    }
+
+    if (context.bands.length > 0) {
+        var band = context.bands[0]
+        return String(band.label || "Target") + " "
+            + _numberText(band.min) + "–" + _numberText(band.max) + suffix
+    }
+
+    if (context.limits.length > 0) {
+        if (context.limits.length >= 2) {
+            var lower = null
+            var upper = null
+            for (var i = 0; i < context.limits.length; ++i) {
+                if (context.limits[i].side === "lower")
+                    lower = context.limits[i]
+                if (context.limits[i].side === "upper")
+                    upper = context.limits[i]
+            }
+            if (lower && upper)
+                return "Critical range "
+                    + _numberText(lower.value) + "–" + _numberText(upper.value) + suffix
+        }
+
+        var limit = context.limits[0]
+        var symbol = limit.side === "lower" ? "≤ " : "≥ "
+        return String(limit.label || "Limit") + " "
+            + symbol + _numberText(limit.value) + suffix
+    }
+
+    if (context.guides.length > 0) {
+        var guide = context.guides[0]
+        return String(guide.label || "Setpoint") + " "
+            + _numberText(guide.value) + suffix
+    }
+
+    return ""
+}
