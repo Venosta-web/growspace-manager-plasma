@@ -2,28 +2,60 @@ import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls as QQC2
 import org.kde.kirigami as Kirigami
+import "native" as NativeWallet
 
 Kirigami.FormLayout {
     id: page
 
-    property alias cfg_haUrl: haUrl.text
-    property alias cfg_accessToken: accessToken.text
     property alias cfg_growspaceId: growspaceId.text
     property alias cfg_refreshInterval: refreshInterval.value
     property alias cfg_autoConnect: autoConnect.checked
 
-    function persistConnectionSettings() {
-        var url = haUrl.text.trim()
-        if (url.length === 0) {
-            url = "http://homeassistant.local:8123"
-            haUrl.text = url
+    property bool walletLoaded: false
+    property string walletStatus: i18n("Loading shared credentials…")
+
+    NativeWallet.WalletStore {
+        id: wallet
+
+        onLoadFinished: function(success) {
+            page.walletLoaded = success
+            if (!success) {
+                page.walletStatus = wallet.errorString
+                return
+            }
+
+            haUrl.text = wallet.url.length > 0
+                ? wallet.url
+                : "http://homeassistant.local:8123"
+            accessToken.text = wallet.token
+            page.walletStatus = wallet.hasCredentials
+                ? i18n("Shared credentials loaded from KWallet")
+                : i18n("No shared credentials saved yet")
         }
 
-        plasmoid.configuration.haUrl = url
-        plasmoid.configuration.accessToken = accessToken.text.trim()
-        plasmoid.configuration.growspaceId = growspaceId.text.trim()
-        plasmoid.configuration.refreshInterval = refreshInterval.value
-        plasmoid.configuration.autoConnect = autoConnect.checked
+        onSaveFinished: function(success) {
+            page.walletLoaded = success
+            page.walletStatus = success
+                ? i18n("Saved securely in KWallet — all Growspace widgets can use this login")
+                : wallet.errorString
+        }
+
+        onClearFinished: function(success) {
+            if (success) {
+                accessToken.text = ""
+                page.walletStatus = i18n("Shared Home Assistant credentials removed")
+            } else {
+                page.walletStatus = wallet.errorString
+            }
+        }
+    }
+
+    Component.onCompleted: wallet.load()
+
+    Kirigami.Heading {
+        Kirigami.FormData.isSection: true
+        text: i18n("Shared Home Assistant login")
+        level: 3
     }
 
     QQC2.TextField {
@@ -31,7 +63,7 @@ Kirigami.FormLayout {
         Kirigami.FormData.label: i18n("Home Assistant URL:")
         placeholderText: "http://homeassistant.local:8123"
         inputMethodHints: Qt.ImhUrlCharactersOnly
-        onEditingFinished: page.persistConnectionSettings()
+        enabled: !wallet.busy
     }
 
     QQC2.TextField {
@@ -39,22 +71,59 @@ Kirigami.FormLayout {
         Kirigami.FormData.label: i18n("Long-lived access token:")
         placeholderText: i18n("Paste Home Assistant token")
         echoMode: TextInput.Password
-        onEditingFinished: page.persistConnectionSettings()
+        enabled: !wallet.busy
     }
 
     Kirigami.InlineMessage {
         Kirigami.FormData.isSection: true
         Layout.fillWidth: true
         visible: true
-        type: Kirigami.MessageType.Warning
-        text: i18n("Development build: the token is stored in your local Plasma configuration and is not encrypted yet. KWallet support is planned before a stable release.")
+        type: wallet.errorString.length > 0
+            ? Kirigami.MessageType.Error
+            : Kirigami.MessageType.Positive
+        text: page.walletStatus
+    }
+
+    RowLayout {
+        Kirigami.FormData.isSection: true
+
+        QQC2.Button {
+            text: wallet.busy ? i18n("Saving…") : i18n("Save shared login")
+            icon.name: "kwalletmanager"
+            enabled: !wallet.busy && accessToken.text.trim().length > 0
+            onClicked: {
+                var url = haUrl.text.trim()
+                if (url.length === 0) {
+                    url = "http://homeassistant.local:8123"
+                    haUrl.text = url
+                }
+                wallet.saveCredentials(url, accessToken.text.trim())
+            }
+        }
+
+        QQC2.Button {
+            text: i18n("Forget login")
+            icon.name: "edit-delete"
+            enabled: !wallet.busy && wallet.hasCredentials
+            onClicked: wallet.clearCredentials()
+        }
+    }
+
+    Kirigami.Separator {
+        Kirigami.FormData.isSection: true
+        Layout.fillWidth: true
+    }
+
+    Kirigami.Heading {
+        Kirigami.FormData.isSection: true
+        text: i18n("This widget")
+        level: 3
     }
 
     QQC2.TextField {
         id: growspaceId
         Kirigami.FormData.label: i18n("Growspace ID:")
         placeholderText: i18n("Optional — blank selects the first growspace")
-        onEditingFinished: page.persistConnectionSettings()
     }
 
     QQC2.SpinBox {
@@ -64,7 +133,6 @@ Kirigami.FormLayout {
         to: 3600
         stepSize: 5
         editable: true
-        onValueModified: page.persistConnectionSettings()
 
         textFromValue: function(value) {
             return i18np("%1 second", "%1 seconds", value)
@@ -80,21 +148,13 @@ Kirigami.FormLayout {
         id: autoConnect
         Kirigami.FormData.label: i18n("Connection:")
         text: i18n("Connect automatically")
-        onToggled: page.persistConnectionSettings()
-    }
-
-    QQC2.Button {
-        Kirigami.FormData.isSection: true
-        text: i18n("Save and connect")
-        icon.name: "network-connect"
-        onClicked: page.persistConnectionSettings()
     }
 
     QQC2.Label {
         Kirigami.FormData.isSection: true
-        text: i18n("Loaded locally: URL %1 · token %2 characters",
-                   haUrl.text.trim().length > 0 ? "✓" : "✗",
-                   accessToken.text.trim().length)
+        Layout.fillWidth: true
+        wrapMode: Text.WordWrap
         opacity: 0.7
+        text: i18n("The Home Assistant URL and token are shared through KWallet. Growspace ID and refresh settings remain unique to each widget.")
     }
 }
