@@ -265,7 +265,6 @@ PlasmoidItem {
                 icon.name: "view-refresh"
                 enabled: root.authenticated && !root.loading
                 onClicked: root.requestGrowspaceData()
-                ToolTip.text: i18n("Refresh")
             }
         }
 
