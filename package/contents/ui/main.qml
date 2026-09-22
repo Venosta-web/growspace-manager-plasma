@@ -45,6 +45,8 @@ PlasmoidItem {
     property string vpdStatusText: displayText(valueAt(growspace, ["metrics", "vpd_status"], "unknown"))
     property string stageText: displayText(valueAt(growspace, ["metrics", "granular_stage"], valueAt(growspace, ["identity", "type"], "unknown")))
     property string periodText: valueAt(growspace, ["metrics", "is_day"], false) ? i18n("Day") : i18n("Night")
+    property string irrigationPumpEntity: String(valueAt(growspace, ["irrigation", "irrigation_config", "irrigation_pump_entity"], "") || "").trim()
+    property bool hasIrrigationPump: irrigationPumpEntity.length > 0
     property string irrigationText: displayText(valueAt(growspace, ["environment", "irrigation_pump_state"], "unknown"))
     property string nextIrrigationText: formatSchedule(valueAt(growspace, ["irrigation", "next_scheduled_cycle"], null))
     property string stageWeekText: stageWeek()
@@ -562,6 +564,7 @@ PlasmoidItem {
                 }
 
                 RowLayout {
+                    visible: root.hasIrrigationPump
                     Layout.fillWidth: true
 
                     PlasmaComponents.Label {
@@ -578,6 +581,7 @@ PlasmoidItem {
                 }
 
                 RowLayout {
+                    visible: root.hasIrrigationPump
                     Layout.fillWidth: true
 
                     PlasmaComponents.Label {
