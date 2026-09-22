@@ -10,6 +10,8 @@ Item {
     property var fixedMin: null
     property var fixedMax: null
     property real minimumSpan: 1
+    property var metricContext: ({ "hasContext": false })
+    property var lightPoints: []
 
     property var hoverPoint: null
     property real hoverX: -1
@@ -91,6 +93,8 @@ Item {
     onFixedMinChanged: canvas.requestPaint()
     onFixedMaxChanged: canvas.requestPaint()
     onMinimumSpanChanged: canvas.requestPaint()
+    onMetricContextChanged: canvas.requestPaint()
+    onLightPointsChanged: canvas.requestPaint()
 
     Item {
         id: plot
@@ -127,6 +131,167 @@ Item {
                     return plot.topPadding + plot.plotHeight
                         - ((value - d.min) / Math.max(0.00001, d.max - d.min))
                         * plot.plotHeight
+                }
+
+                function semanticColor(status) {
+                    if (status === "danger")
+                        return Kirigami.Theme.negativeTextColor
+                    if (status === "warning")
+                        return Kirigami.Theme.neutralTextColor
+                    if (status === "optimal")
+                        return Kirigami.Theme.positiveTextColor
+                    return Kirigami.Theme.highlightColor
+                }
+
+                function contextAt(timestamp) {
+                    if (!root.metricContext || !root.metricContext.hasContext)
+                        return null
+
+                    if (root.metricContext.periodic === true) {
+                        var period = "day"
+                        if (root.lightPoints && root.lightPoints.length > 0) {
+                            var candidate = root.lightPoints[0]
+                            for (var lp = 0; lp < root.lightPoints.length; ++lp) {
+                                if (root.lightPoints[lp].timestamp <= timestamp)
+                                    candidate = root.lightPoints[lp]
+                                else
+                                    break
+                            }
+                            period = Number(candidate.value) > 0 ? "day" : "night"
+                        } else {
+                            period = root.metricContext.currentPeriod || "day"
+                        }
+                        return root.metricContext[period] || null
+                    }
+
+                    return root.metricContext
+                }
+
+                function statusAt(value, timestamp) {
+                    if (!root.metricContext || !root.metricContext.hasContext)
+                        return "neutral"
+
+                    var n = Number(value)
+                    if (isNaN(n))
+                        return "neutral"
+
+                    if (root.metricContext.periodic === true) {
+                        var thresholds = contextAt(timestamp)
+                        if (!thresholds)
+                            return "neutral"
+                        if (n < thresholds.dangerMin || n > thresholds.dangerMax)
+                            return "danger"
+                        if (n < thresholds.optimalMin || n > thresholds.optimalMax)
+                            return "warning"
+                        return "optimal"
+                    }
+
+                    var result = root.metricContext.safeStatus || "neutral"
+                    var limits = root.metricContext.limits || []
+                    for (var li = 0; li < limits.length; ++li) {
+                        var limit = limits[li]
+                        var crossed = limit.side === "lower"
+                            ? n <= Number(limit.value)
+                            : n >= Number(limit.value)
+                        if (crossed) {
+                            if (limit.status === "danger")
+                                return "danger"
+                            result = "warning"
+                        }
+                    }
+
+                    var bands = root.metricContext.bands || []
+                    if (bands.length > 0) {
+                        var inBand = false
+                        for (var bi = 0; bi < bands.length; ++bi) {
+                            if (n >= Number(bands[bi].min) && n <= Number(bands[bi].max)) {
+                                inBand = true
+                                break
+                            }
+                        }
+                        return inBand ? "optimal" : (result === "danger" ? "danger" : "warning")
+                    }
+
+                    return result
+                }
+
+                // Context bands and limits are drawn below the data trace.
+                if (root.metricContext && root.metricContext.hasContext) {
+                    if (root.metricContext.periodic === true) {
+                        var sliceCount = 96
+                        for (var sl = 0; sl < sliceCount; ++sl) {
+                            var t0 = root.startMs + (root.endMs - root.startMs) * sl / sliceCount
+                            var t1 = root.startMs + (root.endMs - root.startMs) * (sl + 1) / sliceCount
+                            var th = contextAt((t0 + t1) / 2)
+                            if (!th)
+                                continue
+
+                            var bandTop = yAt(th.optimalMax)
+                            var bandBottom = yAt(th.optimalMin)
+                            ctx.fillStyle = Qt.rgba(
+                                Kirigami.Theme.positiveTextColor.r,
+                                Kirigami.Theme.positiveTextColor.g,
+                                Kirigami.Theme.positiveTextColor.b, 0.085)
+                            ctx.fillRect(xAt(t0), bandTop, Math.max(1, xAt(t1) - xAt(t0)), bandBottom - bandTop)
+
+                            ctx.strokeStyle = Qt.rgba(
+                                Kirigami.Theme.negativeTextColor.r,
+                                Kirigami.Theme.negativeTextColor.g,
+                                Kirigami.Theme.negativeTextColor.b, 0.30)
+                            ctx.lineWidth = 1
+                            ctx.setLineDash([4, 4])
+                            ctx.beginPath()
+                            ctx.moveTo(xAt(t0), yAt(th.dangerMin))
+                            ctx.lineTo(xAt(t1), yAt(th.dangerMin))
+                            ctx.moveTo(xAt(t0), yAt(th.dangerMax))
+                            ctx.lineTo(xAt(t1), yAt(th.dangerMax))
+                            ctx.stroke()
+                            ctx.setLineDash([])
+                        }
+                    } else {
+                        var bands = root.metricContext.bands || []
+                        for (var bb = 0; bb < bands.length; ++bb) {
+                            var byTop = yAt(Number(bands[bb].max))
+                            var byBottom = yAt(Number(bands[bb].min))
+                            ctx.fillStyle = Qt.rgba(
+                                Kirigami.Theme.positiveTextColor.r,
+                                Kirigami.Theme.positiveTextColor.g,
+                                Kirigami.Theme.positiveTextColor.b, 0.085)
+                            ctx.fillRect(plot.leftPadding, byTop, plot.plotWidth, byBottom - byTop)
+                        }
+
+                        var limits = root.metricContext.limits || []
+                        for (var ll = 0; ll < limits.length; ++ll) {
+                            var ly = yAt(Number(limits[ll].value))
+                            var lc = limits[ll].status === "danger"
+                                ? Kirigami.Theme.negativeTextColor
+                                : Kirigami.Theme.neutralTextColor
+                            ctx.strokeStyle = Qt.rgba(lc.r, lc.g, lc.b, 0.56)
+                            ctx.lineWidth = 1
+                            ctx.setLineDash([5, 4])
+                            ctx.beginPath()
+                            ctx.moveTo(plot.leftPadding, ly)
+                            ctx.lineTo(plot.leftPadding + plot.plotWidth, ly)
+                            ctx.stroke()
+                            ctx.setLineDash([])
+                        }
+
+                        var guides = root.metricContext.guides || []
+                        for (var gg = 0; gg < guides.length; ++gg) {
+                            var gy = yAt(Number(guides[gg].value))
+                            ctx.strokeStyle = Qt.rgba(
+                                Kirigami.Theme.highlightColor.r,
+                                Kirigami.Theme.highlightColor.g,
+                                Kirigami.Theme.highlightColor.b, 0.42)
+                            ctx.lineWidth = 1
+                            ctx.setLineDash([2, 4])
+                            ctx.beginPath()
+                            ctx.moveTo(plot.leftPadding, gy)
+                            ctx.lineTo(plot.leftPadding + plot.plotWidth, gy)
+                            ctx.stroke()
+                            ctx.setLineDash([])
+                        }
+                    }
                 }
 
                 ctx.font = "10px sans-serif"
@@ -166,35 +331,49 @@ Item {
                 if (!root.points || root.points.length === 0)
                     return
 
-                ctx.strokeStyle = Kirigami.Theme.highlightColor
                 ctx.lineWidth = 2.4
                 ctx.lineJoin = "round"
                 ctx.lineCap = "round"
-                ctx.beginPath()
 
-                var started = false
-                var previousY = 0
-
+                var previousPoint = null
                 for (var p = 0; p < root.points.length; ++p) {
                     var point = root.points[p]
                     if (point.timestamp < root.startMs || point.timestamp > root.endMs)
                         continue
 
-                    var px = xAt(point.timestamp)
-                    var py = yAt(point.value)
-
-                    if (!started) {
-                        ctx.moveTo(px, py)
-                        started = true
-                    } else if (root.stepMode) {
-                        ctx.lineTo(px, previousY)
-                        ctx.lineTo(px, py)
-                    } else {
-                        ctx.lineTo(px, py)
+                    if (previousPoint === null) {
+                        previousPoint = point
+                        continue
                     }
-                    previousY = py
+
+                    var x0 = xAt(previousPoint.timestamp)
+                    var y0 = yAt(previousPoint.value)
+                    var x1 = xAt(point.timestamp)
+                    var y1 = yAt(point.value)
+                    var status = statusAt(point.value, point.timestamp)
+                    ctx.strokeStyle = semanticColor(status)
+                    ctx.beginPath()
+                    ctx.moveTo(x0, y0)
+
+                    if (root.stepMode) {
+                        ctx.lineTo(x1, y0)
+                        ctx.lineTo(x1, y1)
+                    } else {
+                        ctx.lineTo(x1, y1)
+                    }
+
+                    ctx.stroke()
+                    previousPoint = point
                 }
-                ctx.stroke()
+
+                if (root.points.length === 1) {
+                    var only = root.points[0]
+                    var oc = semanticColor(statusAt(only.value, only.timestamp))
+                    ctx.fillStyle = oc
+                    ctx.beginPath()
+                    ctx.arc(xAt(only.timestamp), yAt(only.value), 3, 0, Math.PI * 2)
+                    ctx.fill()
+                }
 
                 if (root.hoverPoint !== null) {
                     var hx = xAt(root.hoverPoint.timestamp)
