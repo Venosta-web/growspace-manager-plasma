@@ -153,5 +153,9 @@ The history widget:
 - renders binary/step metrics such as pumps and switches as step charts
 - preserves fan percentage history when Home Assistant exposes `attributes.percentage`
 - shows latest, minimum and maximum values plus hover tooltips
+- renders Growspace Manager context directly on supported metrics: optimal target bands, warning/danger limits and configured controller setpoints
+- colors each history segment by semantic state (optimal, warning, danger) instead of using one undifferentiated trace color
+- uses day/night VPD targets across the historical timeline when a light-state entity is available
+- shows a live contextual status badge; warning gently pulses and danger uses a stronger attention animation
 
 Examples include temperature, humidity, VPD, CO₂, soil moisture, tank level, exhaust, circulation, humidifier/dehumidifier state, substrate temperature, EC sensors, pH, power, energy, drain volume and irrigation flow when those entities are configured.
