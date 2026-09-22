@@ -408,7 +408,7 @@ PlasmoidItem {
                 }
 
                 PlasmaComponents.Label {
-                    text: i18n("Right-click the widget → Configure Growspace Manager… and enter your Home Assistant URL and long-lived access token.")
+                    text: i18n("Right-click the widget → Configure Growspace Manager… and enter your Home Assistant URL and long-lived access token. %1", root.configurationDiagnostic)
                     wrapMode: Text.WordWrap
                     Layout.fillWidth: true
                     opacity: 0.75
