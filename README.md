@@ -17,6 +17,7 @@ The widget can:
 - select a configured growspace, or automatically use the first available growspace
 - show temperature, humidity, VPD, plant count, stage/week, day/night state and irrigation information
 - automatically show sensor-backed irrigation tanks with animated liquid level, low-level warnings, capacity, depletion state and estimated time remaining
+- show compact live actuator chips for configured lights, exhaust, circulation, humidification and dehumidification devices, preserving native On/Off, 0–10, or 0–100% readings
 - show live connection/authentication/error state
 - refresh automatically on a configurable interval
 - render as both a compact Plasma panel widget and an expanded desktop/popup widget
