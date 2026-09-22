@@ -1,48 +1,134 @@
 # Growspace Manager Plasma
 
-Native KDE Plasma 6 widget for [Growspace Manager](https://github.com/Venosta-web/growspace_manager), showing live Home Assistant growspace data directly on the Kubuntu desktop or panel.
+A native **KDE Plasma 6 widget suite** for [Growspace Manager](https://github.com/Venosta-web/growspace_manager), bringing live Home Assistant growspace data, irrigation/crop-steering data, and metric history directly onto the Plasma desktop.
 
-## Current status
+**Current release: v0.6.0**
 
-v0.2 adds shared, encrypted Home Assistant credentials through KDE KWallet.
+The project installs three independent Plasma widgets:
 
-The widget can:
+| Widget | Purpose |
+| --- | --- |
+| **Growspace Manager** | Compact live growspace dashboard |
+| **Growspace Manager Irrigation** | VWC / crop-steering irrigation chart |
+| **Growspace Manager History** | Configurable 24-hour graph for any supported metric |
 
-- authenticate against Home Assistant over its native WebSocket API
-- call `growspace_manager/get_data`
-- share one Home Assistant URL/token securely across every widget instance
-- keep each widget's growspace selection and refresh settings independent
-- fetch available growspaces directly from Growspace Manager and show their user-facing names in a selector
-- migrate the old per-widget plaintext token into KWallet on first launch
-- select a configured growspace, or automatically use the first available growspace
-- show temperature, humidity, VPD, plant count, stage/week, day/night state and irrigation information
-- automatically show sensor-backed irrigation tanks with animated liquid level, low-level warnings, capacity, depletion state and estimated time remaining
-- show compact live actuator chips for configured lights, exhaust, circulation, humidification and dehumidification devices, preserving native On/Off, 0–10, or 0–100% readings
-- show live connection/authentication/error state
-- refresh automatically on a configurable interval
-- render as both a compact Plasma panel widget and an expanded desktop/popup widget
+All three widgets share one Home Assistant login through **KDE KWallet** while keeping their own growspace/metric configuration.
+
+## Highlights
+
+### Growspace Manager
+
+The main overview widget provides a compact grow-room dashboard with:
+
+- growspace name, stage and week
+- temperature, humidity, VPD and plant count
+- contextual VPD state such as Optimal / Warning / Danger
+- automatic day/night state
+- live grow-light, exhaust, circulation, humidifier and dehumidifier status
+- native device values: On/Off, 0–10 controller intensity, or 0–100%
+- custom grow-room device icons and active fan animation
+- irrigation status when an irrigation pump is configured
+- sensor-backed irrigation tanks only when a tank level sensor exists
+- animated tank level, capacity, low-water threshold and depletion information
+- automatic growspace discovery by user-facing name
+- responsive desktop/panel layout
+
+### Growspace Manager Irrigation
+
+A dedicated crop-steering widget based on the same data model as the Growspace Manager Lovelace card:
+
+- measured VWC history from `growspace_manager/get_crop_steering_history`
+- 5-minute history buckets
+- lights-on-anchored 24-hour timeline
+- Target VWC and P2 dryback guides
+- optional Pore EC and Bulk EC traces
+- P0 Activation / P1 Saturation / P2 Maintenance / P3 Dryback phase strip
+- scheduled irrigation-shot markers
+- measured VWC-based P1 → P2 transition
+- backend `phase_changed_at` support for an early P3 transition
+- current VWC, pump state, next cycle and EC values
+
+### Growspace Manager History
+
+A reusable graph widget for the last 24 hours:
+
+- select a growspace by its normal user-facing name
+- dynamically discover only metrics actually configured for that growspace
+- distinguish multiple sensors using Home Assistant friendly names
+- retrieve history with `growspace_manager/get_history_stats`
+- continuous line graphs and binary/step graphs
+- current, minimum and maximum values
+- hover timestamp/value tooltips
+- contextual target bands and controller setpoints
+- semantic history coloring: Optimal / Warning / Danger
+- day/night-aware VPD ranges using historical light state when available
+- subtle warning/danger animations
+
+Supported metrics depend on the growspace configuration and can include temperature, humidity, VPD, CO₂, soil moisture, tank level, exhaust/circulation speed, humidifier/dehumidifier state, substrate temperature, pH, EC sensors, power, energy, drain volume and irrigation flow.
 
 ## Requirements
 
-Runtime:
-
 - KDE Plasma 6
 - KDE KWallet
-- Growspace Manager installed in Home Assistant
-- Qt WebSockets QML support
+- Home Assistant with the Growspace Manager custom integration installed
+- a Home Assistant long-lived access token
+- Qt 6 / KDE Frameworks 6 build dependencies for the small bundled KWallet bridge
 
-Development/install dependencies on Kubuntu:
+The native bridge is compiled **locally on the user's machine** and bundled inside each plasmoid. Nothing is installed as a custom system-wide QML module.
+
+## Quick install — Kubuntu / Ubuntu-based Plasma
+
+Download the latest release bundle and run the bootstrap installer:
 
 ```bash
+tmp="$(mktemp -d)"
+cd "$tmp"
+curl -fL https://github.com/Venosta-web/growspace-manager-plasma/releases/latest/download/growspace-manager-plasma.tar.gz -o growspace-manager-plasma.tar.gz
+tar -xzf growspace-manager-plasma.tar.gz
+cd growspace-manager-plasma
+bash install-kubuntu.sh
+```
+
+The bootstrap script installs the required packages with APT, builds the KWallet bridge, installs all three widgets, and reloads Plasma.
+
+After installation:
+
+1. Right-click the Plasma desktop or panel.
+2. Choose **Add Widgets…**
+3. Add **Growspace Manager**.
+4. Open its settings.
+5. Enter the Home Assistant URL and a long-lived access token once.
+6. Select the growspace by name.
+7. Add the Irrigation and History widgets as desired; they reuse the same KWallet login automatically.
+
+## Manual install
+
+### Kubuntu dependencies
+
+```bash
+sudo apt update
 sudo apt install \
   build-essential cmake extra-cmake-modules \
   qt6-base-dev qt6-declarative-dev qml6-module-qtwebsockets \
-  libkf6wallet-dev
+  libkf6wallet-dev kpackagetool6
 ```
 
-The installer compiles a very small native KF6 bridge and bundles it inside the plasmoid. No system-wide custom QML module is installed.
+Then install:
 
-## Install during development
+```bash
+./install.sh
+systemctl --user restart plasma-plasmashell.service
+```
+
+For development from Git:
+
+```bash
+git clone https://github.com/Venosta-web/growspace-manager-plasma.git
+cd growspace-manager-plasma
+bash install-kubuntu.sh
+```
+
+To update a Git checkout later:
 
 ```bash
 git pull
@@ -50,112 +136,93 @@ git pull
 systemctl --user restart plasma-plasmashell.service
 ```
 
-Then add **Growspace Manager** from Plasma's widget picker.
-
 ## Shared KWallet login
 
-The Home Assistant URL and long-lived token live in the user's KDE network wallet under:
+The Home Assistant URL and long-lived access token are stored in the user's KDE network wallet:
 
 ```text
 Folder: Growspace Manager Plasma
 Entry:  homeassistant
 ```
 
-They are shared by every Growspace Manager plasmoid instance.
+Credentials are shared across every Growspace Manager Plasma widget instance. Per-widget Plasma configuration stores only things such as:
 
-Per-widget configuration contains only:
-
-- selected growspace (stored internally by ID, shown in the UI by its user-facing name)
+- selected growspace ID
+- selected history metric/entity
 - refresh interval
-- auto-connect/display behavior
+- display/connection preferences
 
-### Migration from v0.1
+Existing early-development installs containing a plaintext token are migrated to KWallet when possible and the old per-widget credential is cleared after a successful KWallet write.
 
-If an existing widget still has the old plaintext token in its Plasma configuration, v0.2 does this automatically:
+## Home Assistant APIs used
 
-1. opens KWallet
-2. writes the Home Assistant URL and token to the shared KWallet entry
-3. waits for KWallet to confirm the write
-4. clears the old `accessToken` and `haUrl` values from that widget's Plasma config
-5. reconnects using the KWallet credential
+The widgets intentionally remain frontends. Grow logic, automation, target calculations and data modelling stay in Growspace Manager.
 
-A second widget can therefore be added without pasting the token again.
-
-## Data source
-
-Growspace Manager already exposes the required structured data via:
+The suite currently consumes:
 
 ```text
 growspace_manager/get_data
+growspace_manager/get_crop_steering_history
+growspace_manager/get_history_stats
 ```
 
-The Plasma widget intentionally remains a frontend. Grow logic, automation and data modelling stay inside the Home Assistant integration.
+It also uses Home Assistant's native WebSocket `get_states` command for live device/entity display values.
 
-## Next milestones
+## Release bundles
 
-- Growspace Manager alert display
-- Home Assistant event-driven refresh in addition to periodic polling
-- Rootforge/Growspace Manager branded visual treatment
-- quick actions for supported Growspace Manager services
-- packaging/release automation
+Each GitHub release contains:
+
+- `growspace-manager-plasma.tar.gz`
+- `growspace-manager-plasma.zip`
+- `SHA256SUMS`
+
+The bundle contains the complete source required to build the small KWallet bridge locally and install all three widgets.
+
+GitHub's automatically generated source archives are also available, but the named release bundle is recommended because the README install command always points to the latest release.
+
+## Project layout
+
+```text
+package/             Main Growspace Manager widget
+package-irrigation/  Irrigation / crop-steering widget
+package-history/     Configurable 24-hour history widget
+native/              Shared KF6/KWallet QML bridge source
+install.sh           Build + install all widgets
+install-kubuntu.sh   Install Kubuntu dependencies + run install.sh
+```
+
+## Troubleshooting
+
+### Widget does not appear after updating
+
+Reload Plasma:
+
+```bash
+systemctl --user restart plasma-plasmashell.service
+```
+
+### KWallet prompt
+
+The first widget may ask to unlock or authorize the KDE wallet. This is expected. Once credentials are stored, the other Growspace Manager widgets reuse them.
+
+### Build fails because a command or dependency is missing
+
+On Kubuntu, rerun:
+
+```bash
+bash install-kubuntu.sh
+```
+
+### Home Assistant connects but no growspaces appear
+
+Confirm the Growspace Manager integration is installed and that the configured token can access Home Assistant's WebSocket API.
+
+## Security
+
+- Home Assistant credentials are stored in KDE KWallet rather than normal Plasma widget configuration.
+- The repository does not ship precompiled KWallet bridge binaries.
+- Release bundles contain source; the native bridge is built locally against the user's installed Qt/KF6 libraries.
 
 ## License
 
 MIT
-
-
-## Growspace Manager Irrigation widget
-
-The repository also contains a second Plasma applet:
-
-```text
-Growspace Manager Irrigation
-com.venosta.growspace-manager-irrigation
-```
-
-It uses the same shared KWallet Home Assistant login as the overview widget, but keeps its own growspace selection.
-
-The chart mirrors the Growspace Manager Lovelace crop-steering data flow:
-
-- fetches growspace context with `growspace_manager/get_data`
-- fetches measured irrigation history with `growspace_manager/get_crop_steering_history`
-- plots the 5-minute VWC buckets across the same lights-on-anchored day used by the Lovelace crop-steering chart
-- overlays Target VWC and the P2 maintenance dryback threshold
-- optionally plots Pore EC and Bulk EC when those sensors are configured
-- shows current VWC, irrigation pump state, next cycle, and latest EC values
-- renders the P0/P1/P2/P3 crop-steering phase strip using the same boundaries as the Lovelace card
-- renders scheduled irrigation-shot markers on the same 24-hour timeline, dimming shots that are already in the past
-- derives the P1→P2 saturation boundary from the measured VWC history and honors an actual early P3 `phase_changed_at` boundary when supplied by the backend
-
-All applets are installed by `./install.sh`.
-
-
-## Growspace Manager History widget
-
-A third Plasma applet provides a configurable 24-hour graph:
-
-```text
-Growspace Manager History
-com.venosta.growspace-manager-history
-```
-
-Users select a growspace by its user-facing name and then select any graphable metric actually configured for that growspace. The selector is built dynamically from Growspace Manager's entity configuration and Home Assistant states.
-
-The history widget:
-
-- reuses the shared KWallet Home Assistant login
-- fetches growspace configuration with `growspace_manager/get_data`
-- discovers available metric entities dynamically
-- distinguishes multi-sensor metrics with Home Assistant friendly names
-- fetches the last 24 hours through `growspace_manager/get_history_stats`
-- uses the same 30-minute history interval as the Lovelace card's 24-hour view
-- renders continuous metrics as line charts
-- renders binary/step metrics such as pumps and switches as step charts
-- preserves fan percentage history when Home Assistant exposes `attributes.percentage`
-- shows latest, minimum and maximum values plus hover tooltips
-- renders Growspace Manager context directly on supported metrics: optimal target bands, warning/danger limits and configured controller setpoints
-- colors each history segment by semantic state (optimal, warning, danger) instead of using one undifferentiated trace color
-- uses day/night VPD targets across the historical timeline when a light-state entity is available
-- shows a live contextual status badge; warning gently pulses and danger uses a stronger attention animation
-
-Examples include temperature, humidity, VPD, CO₂, soil moisture, tank level, exhaust, circulation, humidifier/dehumidifier state, substrate temperature, EC sensors, pH, power, energy, drain volume and irrigation flow when those entities are configured.
