@@ -14,7 +14,7 @@ Item {
     property var hoverPoint: null
     property real hoverX: -1
 
-    readonly property double endMs: Date.now()
+    property double endMs: Date.now()
     readonly property double startMs: endMs - 24 * 60 * 60 * 1000
 
     function domain() {
@@ -82,7 +82,10 @@ Item {
         return nearestPoint
     }
 
-    onPointsChanged: canvas.requestPaint()
+    onPointsChanged: {
+        endMs = Date.now()
+        canvas.requestPaint()
+    }
     onUnitChanged: canvas.requestPaint()
     onStepModeChanged: canvas.requestPaint()
     onFixedMinChanged: canvas.requestPaint()
