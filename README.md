@@ -127,4 +127,31 @@ The chart mirrors the Growspace Manager Lovelace crop-steering data flow:
 - renders scheduled irrigation-shot markers on the same 24-hour timeline, dimming shots that are already in the past
 - derives the P1→P2 saturation boundary from the measured VWC history and honors an actual early P3 `phase_changed_at` boundary when supplied by the backend
 
-Both applets are installed by `./install.sh`.
+All applets are installed by `./install.sh`.
+
+
+## Growspace Manager History widget
+
+A third Plasma applet provides a configurable 24-hour graph:
+
+```text
+Growspace Manager History
+com.venosta.growspace-manager-history
+```
+
+Users select a growspace by its user-facing name and then select any graphable metric actually configured for that growspace. The selector is built dynamically from Growspace Manager's entity configuration and Home Assistant states.
+
+The history widget:
+
+- reuses the shared KWallet Home Assistant login
+- fetches growspace configuration with `growspace_manager/get_data`
+- discovers available metric entities dynamically
+- distinguishes multi-sensor metrics with Home Assistant friendly names
+- fetches the last 24 hours through `growspace_manager/get_history_stats`
+- uses the same 30-minute history interval as the Lovelace card's 24-hour view
+- renders continuous metrics as line charts
+- renders binary/step metrics such as pumps and switches as step charts
+- preserves fan percentage history when Home Assistant exposes `attributes.percentage`
+- shows latest, minimum and maximum values plus hover tooltips
+
+Examples include temperature, humidity, VPD, CO₂, soil moisture, tank level, exhaust, circulation, humidifier/dehumidifier state, substrate temperature, EC sensors, pH, power, energy, drain volume and irrigation flow when those entities are configured.
