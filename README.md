@@ -100,3 +100,26 @@ The Plasma widget intentionally remains a frontend. Grow logic, automation and d
 ## License
 
 MIT
+
+
+## Growspace Manager Irrigation widget
+
+The repository also contains a second Plasma applet:
+
+```text
+Growspace Manager Irrigation
+com.venosta.growspace-manager-irrigation
+```
+
+It uses the same shared KWallet Home Assistant login as the overview widget, but keeps its own growspace selection.
+
+The chart mirrors the Growspace Manager Lovelace crop-steering data flow:
+
+- fetches growspace context with `growspace_manager/get_data`
+- fetches measured irrigation history with `growspace_manager/get_crop_steering_history`
+- plots the 5-minute VWC buckets across the same lights-on-anchored day used by the Lovelace crop-steering chart
+- overlays Target VWC and the P2 maintenance dryback threshold
+- optionally plots Pore EC and Bulk EC when those sensors are configured
+- shows current VWC, irrigation pump state, next cycle, and latest EC values
+
+Both applets are installed by `./install.sh`.
