@@ -32,6 +32,8 @@ PlasmoidItem {
 
     readonly property string growspaceName: valueAt(growspace, ["identity","name"], selectedGrowspaceId || i18n("Irrigation"))
     readonly property var strategy: valueAt(growspace, ["irrigation","irrigation_strategy"], null)
+    readonly property var irrigationConfig: valueAt(growspace, ["irrigation","irrigation_config"], ({}))
+    readonly property real resolvedDayHours: Number(valueAt(growspace, ["irrigation","irrigation_config","resolved_day_hours"], 12))
     readonly property var targetVwc: strategy ? strategy.target_vwc_percent : null
     readonly property var dryback: strategy ? strategy.maintenance_dryback_percent : null
     readonly property string pumpState: displayText(valueAt(growspace, ["environment","irrigation_pump_state"], "unknown"))
@@ -316,6 +318,9 @@ PlasmoidItem {
                 lightsOn: root.history.lights_on || ""
                 targetVwc: root.targetVwc
                 maintenanceDryback: root.dryback
+                strategy: root.strategy
+                irrigationConfig: root.irrigationConfig
+                dayHours: isNaN(root.resolvedDayHours) ? 12 : root.resolvedDayHours
                 showEc: root.showEc
             }
         }
@@ -338,7 +343,9 @@ PlasmoidItem {
             }
             Item { Layout.fillWidth: true }
             PlasmaComponents.Label {
-                text: i18n("5 min buckets · lights-on anchored")
+                text: chart.currentPhaseLabel.length > 0
+                    ? chart.currentPhaseLabel + " · " + i18n("5 min buckets")
+                    : i18n("5 min buckets · lights-on anchored")
                 opacity: 0.48
                 font.pointSize: Kirigami.Theme.smallFont.pointSize
             }
