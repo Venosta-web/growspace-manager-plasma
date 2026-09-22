@@ -6,7 +6,7 @@ import org.kde.plasma.components as PlasmaComponents
 Rectangle {
     id: root
 
-    property string iconName: "dialog-information"
+    property url iconName: ""
     property string label: ""
     property string value: "—"
     property bool active: false
@@ -36,6 +36,7 @@ Rectangle {
 
         Kirigami.Icon {
             source: root.iconName
+            color: root.active ? Kirigami.Theme.highlightColor : Kirigami.Theme.textColor
             implicitWidth: 15
             implicitHeight: 15
             opacity: root.unavailable ? 0.35 : (root.active ? 1.0 : 0.62)
