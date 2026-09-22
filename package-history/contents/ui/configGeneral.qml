@@ -137,7 +137,7 @@ Kirigami.FormLayout {
     Component.onCompleted: wallet.load()
 
     ListModel { id: growspaceModel }
-    ListModel { id: metricModel }
+    ListModel { id: metricModel; dynamicRoles: true }
 
     WebSocket {
         id: socket
