@@ -10,9 +10,12 @@ PlasmoidItem {
     id: root
 
     implicitWidth: 430
-    implicitHeight: 320 + (sensorTanks.length > 0
-        ? 138 * Math.ceil(sensorTanks.length / (width >= 390 ? 2 : 1))
-        : 0)
+    implicitHeight: 286
+        + (deviceChips.length > 0 ? 34 : 0)
+        + (hasIrrigationPump ? 32 : 0)
+        + (sensorTanks.length > 0
+            ? 122 * Math.ceil(sensorTanks.length / (width >= 390 ? 2 : 1))
+            : 0)
     preferredRepresentation: fullRepresentation
 
     property bool authenticated: false
@@ -463,6 +466,30 @@ PlasmoidItem {
         return stageText
     }
 
+    function stageBadgeText() {
+        var stage = stageText
+        if (stage === "—")
+            return ""
+
+        var week = ""
+        var flowerWeek = Number(valueAt(growspace, ["metrics", "flower_week"], 0))
+        var vegWeek = Number(valueAt(growspace, ["metrics", "veg_week"], 0))
+        var dryWeek = Number(valueAt(growspace, ["metrics", "dry_week"], 0))
+        var cureWeek = Number(valueAt(growspace, ["metrics", "cure_week"], 0))
+
+        if (flowerWeek > 0) week = " · W" + flowerWeek
+        else if (vegWeek > 0) week = " · W" + vegWeek
+        else if (dryWeek > 0) week = " · W" + dryWeek
+        else if (cureWeek > 0) week = " · W" + cureWeek
+
+        return stage.toUpperCase() + week
+    }
+
+    function vpdDetailIsGood() {
+        var status = String(vpdStatusText || "").toLowerCase()
+        return status === "optimal" || status === "good"
+    }
+
     function reconnect(delay) {
         authenticated = false
         loading = false
@@ -694,65 +721,106 @@ PlasmoidItem {
     }
 
     fullRepresentation: ColumnLayout {
-        spacing: Kirigami.Units.smallSpacing
+        spacing: 8
 
         RowLayout {
             Layout.fillWidth: true
-            spacing: Kirigami.Units.smallSpacing
-
-            Kirigami.Icon {
-                source: "view-statistics"
-                implicitWidth: Kirigami.Units.iconSizes.medium
-                implicitHeight: implicitWidth
-            }
+            spacing: 8
 
             ColumnLayout {
                 Layout.fillWidth: true
-                spacing: 0
+                spacing: 2
 
-                PlasmaComponents.Label {
-                    text: root.growspaceName
-                    font.bold: true
-                    font.pointSize: Kirigami.Theme.defaultFont.pointSize + 3
-                    elide: Text.ElideRight
+                RowLayout {
                     Layout.fillWidth: true
+                    spacing: 7
+
+                    PlasmaComponents.Label {
+                        text: root.growspaceName
+                        font.bold: true
+                        font.pointSize: Kirigami.Theme.defaultFont.pointSize + 4
+                        elide: Text.ElideRight
+                        Layout.maximumWidth: parent.width * 0.62
+                    }
+
+                    Rectangle {
+                        visible: root.stageBadgeText().length > 0
+                        implicitWidth: stageBadgeLabel.implicitWidth + 14
+                        implicitHeight: 22
+                        radius: 6
+                        color: Qt.rgba(
+                            Kirigami.Theme.highlightColor.r,
+                            Kirigami.Theme.highlightColor.g,
+                            Kirigami.Theme.highlightColor.b,
+                            0.10
+                        )
+
+                        PlasmaComponents.Label {
+                            id: stageBadgeLabel
+                            anchors.centerIn: parent
+                            text: root.stageBadgeText()
+                            font.bold: true
+                            font.pointSize: Kirigami.Theme.smallFont.pointSize
+                            color: Kirigami.Theme.highlightColor
+                            opacity: 0.92
+                        }
+                    }
+
+                    Item { Layout.fillWidth: true }
                 }
 
-                PlasmaComponents.Label {
-                    text: root.connectionState
-                        + (root.lastUpdated.length > 0 ? i18n(" · updated %1", root.lastUpdated) : "")
-                    opacity: 0.65
-                    font.pointSize: Kirigami.Theme.smallFont.pointSize
-                    elide: Text.ElideRight
-                    Layout.fillWidth: true
+                RowLayout {
+                    spacing: 5
+
+                    Rectangle {
+                        implicitWidth: 7
+                        implicitHeight: 7
+                        radius: 4
+                        color: root.authenticated
+                            ? Kirigami.Theme.positiveTextColor
+                            : (root.errorMessage.length > 0
+                                ? Kirigami.Theme.negativeTextColor
+                                : Kirigami.Theme.disabledTextColor)
+
+                        SequentialAnimation on opacity {
+                            running: root.loading
+                            loops: Animation.Infinite
+                            NumberAnimation { to: 0.35; duration: 500 }
+                            NumberAnimation { to: 1.0; duration: 500 }
+                        }
+                    }
+
+                    PlasmaComponents.Label {
+                        text: root.connectionState
+                            + (root.lastUpdated.length > 0 ? " · " + root.lastUpdated : "")
+                        opacity: 0.48
+                        font.pointSize: Kirigami.Theme.smallFont.pointSize
+                    }
                 }
             }
 
-            Rectangle {
-                implicitWidth: 9
-                implicitHeight: 9
-                radius: 4.5
-                color: root.authenticated
-                    ? Kirigami.Theme.positiveTextColor
-                    : (root.errorMessage.length > 0 ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.disabledTextColor)
+            PlasmaComponents.Button {
+                icon.name: "view-refresh"
+                display: PlasmaComponents.AbstractButton.IconOnly
+                flat: true
+                enabled: root.authenticated && !root.loading
+                onClicked: root.requestData()
             }
         }
 
         Rectangle {
             visible: root.walletLoaded && !root.configured
             Layout.fillWidth: true
-            implicitHeight: setupColumn.implicitHeight + Kirigami.Units.largeSpacing * 2
-            radius: Kirigami.Units.smallSpacing
-            color: Kirigami.Theme.backgroundColor
-            border.width: 1
-            border.color: Kirigami.Theme.disabledTextColor
+            implicitHeight: setupColumn.implicitHeight + 24
+            radius: 8
+            color: Qt.rgba(Kirigami.Theme.textColor.r,
+                           Kirigami.Theme.textColor.g,
+                           Kirigami.Theme.textColor.b, 0.045)
 
             ColumnLayout {
                 id: setupColumn
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
-                anchors.margins: Kirigami.Units.largeSpacing
+                anchors.fill: parent
+                anchors.margins: 12
 
                 PlasmaComponents.Label {
                     text: i18n("Home Assistant login required")
@@ -760,10 +828,10 @@ PlasmoidItem {
                 }
 
                 PlasmaComponents.Label {
-                    text: i18n("Configure the shared Home Assistant login once. It will be stored in KWallet and reused by every Growspace Manager widget.")
+                    text: i18n("Configure the shared Home Assistant login once. KWallet will reuse it for every Growspace Manager widget.")
                     wrapMode: Text.WordWrap
                     Layout.fillWidth: true
-                    opacity: 0.75
+                    opacity: 0.62
                 }
             }
         }
@@ -780,8 +848,8 @@ PlasmoidItem {
             visible: root.configured
             Layout.fillWidth: true
             columns: root.width >= 420 ? 4 : 2
-            columnSpacing: Kirigami.Units.smallSpacing
-            rowSpacing: Kirigami.Units.smallSpacing
+            columnSpacing: 6
+            rowSpacing: 6
 
             MetricTile {
                 Layout.fillWidth: true
@@ -805,6 +873,7 @@ PlasmoidItem {
                 value: root.vpdText
                 detail: root.vpdStatusText
                 iconName: "speedometer"
+                accentDetail: root.vpdDetailIsGood()
             }
 
             MetricTile {
@@ -816,151 +885,115 @@ PlasmoidItem {
             }
         }
 
-        Rectangle {
-            visible: root.configured
+        Flow {
+            visible: root.deviceChips.length > 0
             Layout.fillWidth: true
-            Layout.fillHeight: true
-            implicitHeight: detailsColumn.implicitHeight + Kirigami.Units.largeSpacing
-            radius: Kirigami.Units.smallSpacing
-            color: Kirigami.Theme.backgroundColor
-            border.width: 1
-            border.color: Kirigami.Theme.disabledTextColor
+            spacing: 5
 
-            ColumnLayout {
-                id: detailsColumn
+            Repeater {
+                model: root.deviceChips
+
+                DeviceStatusChip {
+                    iconName: modelData.icon
+                    label: modelData.label
+                    value: modelData.value
+                    active: modelData.active
+                }
+            }
+        }
+
+        Rectangle {
+            visible: root.hasIrrigationPump
+            Layout.fillWidth: true
+            implicitHeight: 34
+            radius: 7
+            color: Qt.rgba(Kirigami.Theme.textColor.r,
+                           Kirigami.Theme.textColor.g,
+                           Kirigami.Theme.textColor.b, 0.035)
+
+            RowLayout {
                 anchors.fill: parent
-                anchors.margins: Kirigami.Units.smallSpacing * 1.5
-                spacing: Kirigami.Units.smallSpacing
+                anchors.leftMargin: 10
+                anchors.rightMargin: 10
+                spacing: 7
 
-                RowLayout {
-                    Layout.fillWidth: true
-
-                    PlasmaComponents.Label {
-                        text: i18n("Stage")
-                        opacity: 0.65
-                    }
-
-                    Item { Layout.fillWidth: true }
-
-                    PlasmaComponents.Label {
-                        text: root.stageText
-                        font.bold: true
-                    }
+                Kirigami.Icon {
+                    source: "weather-showers"
+                    implicitWidth: 16
+                    implicitHeight: 16
+                    opacity: 0.62
                 }
 
-                Flow {
-                    visible: root.deviceChips.length > 0
-                    Layout.fillWidth: true
-                    spacing: Kirigami.Units.smallSpacing
-
-                    Repeater {
-                        model: root.deviceChips
-
-                        DeviceStatusChip {
-                            iconName: modelData.icon
-                            label: modelData.label
-                            value: modelData.value
-                            active: modelData.active
-                        }
-                    }
+                PlasmaComponents.Label {
+                    text: i18n("Irrigation")
+                    font.bold: true
                 }
 
-                RowLayout {
-                    visible: root.hasIrrigationPump
-                    Layout.fillWidth: true
-
-                    PlasmaComponents.Label {
-                        text: i18n("Irrigation pump")
-                        opacity: 0.65
-                    }
-
-                    Item { Layout.fillWidth: true }
-
-                    PlasmaComponents.Label {
-                        text: root.irrigationText
-                        font.bold: true
-                    }
+                PlasmaComponents.Label {
+                    text: root.irrigationText
+                    color: root.irrigationText === "On"
+                        ? Kirigami.Theme.highlightColor
+                        : Kirigami.Theme.textColor
+                    opacity: root.irrigationText === "On" ? 1.0 : 0.58
+                    font.bold: root.irrigationText === "On"
                 }
 
-                RowLayout {
-                    visible: root.hasIrrigationPump
-                    Layout.fillWidth: true
+                Item { Layout.fillWidth: true }
 
-                    PlasmaComponents.Label {
-                        text: i18n("Next irrigation")
-                        opacity: 0.65
-                    }
+                PlasmaComponents.Label {
+                    text: root.nextIrrigationText
+                    opacity: 0.58
+                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                }
+            }
+        }
 
-                    Item { Layout.fillWidth: true }
+        ColumnLayout {
+            visible: root.sensorTanks.length > 0
+            Layout.fillWidth: true
+            spacing: 5
 
-                    PlasmaComponents.Label {
-                        text: root.nextIrrigationText
-                        font.bold: true
-                    }
+            RowLayout {
+                Layout.fillWidth: true
+
+                PlasmaComponents.Label {
+                    text: i18np("%1 tank", "%1 tanks", root.sensorTanks.length)
+                    font.bold: true
+                    opacity: 0.76
                 }
 
-                ColumnLayout {
-                    visible: root.sensorTanks.length > 0
-                    Layout.fillWidth: true
-                    spacing: Kirigami.Units.smallSpacing
+                Item { Layout.fillWidth: true }
 
-                    RowLayout {
+                PlasmaComponents.Label {
+                    visible: root.lowTankCount > 0
+                    text: i18np("⚠ %1 low", "⚠ %1 low", root.lowTankCount)
+                    color: Kirigami.Theme.negativeTextColor
+                    font.bold: true
+                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                }
+            }
+
+            GridLayout {
+                Layout.fillWidth: true
+                columns: root.width >= 390 ? 2 : 1
+                columnSpacing: 6
+                rowSpacing: 6
+
+                Repeater {
+                    model: root.sensorTanks
+
+                    TankGauge {
+                        tank: modelData
                         Layout.fillWidth: true
-
-                        PlasmaComponents.Label {
-                            text: i18np("%1 tank", "%1 tanks", root.sensorTanks.length)
-                            font.bold: true
-                        }
-
-                        Item { Layout.fillWidth: true }
-
-                        PlasmaComponents.Label {
-                            visible: root.lowTankCount > 0
-                            text: i18np("⚠ %1 low", "⚠ %1 low", root.lowTankCount)
-                            color: Kirigami.Theme.negativeTextColor
-                            font.bold: true
-                            font.pointSize: Kirigami.Theme.smallFont.pointSize
-                        }
-                    }
-
-                    GridLayout {
-                        Layout.fillWidth: true
-                        columns: root.width >= 390 ? 2 : 1
-                        columnSpacing: Kirigami.Units.smallSpacing
-                        rowSpacing: Kirigami.Units.smallSpacing
-
-                        Repeater {
-                            model: root.sensorTanks
-
-                            TankGauge {
-                                tank: modelData
-                                Layout.fillWidth: true
-                            }
-                        }
-                    }
-                }
-
-                RowLayout {
-                    Layout.fillWidth: true
-
-                    PlasmaComponents.Label {
-                        text: root.selectedGrowspaceId.length > 0
-                            ? i18n("%1 · %2 growspace(s)", root.selectedGrowspaceId, Object.keys(root.collection || {}).length)
-                            : i18n("No growspace selected")
-                        opacity: 0.55
-                        font.pointSize: Kirigami.Theme.smallFont.pointSize
-                        elide: Text.ElideRight
-                        Layout.fillWidth: true
-                    }
-
-                    PlasmaComponents.Button {
-                        text: root.loading ? i18n("Refreshing…") : i18n("Refresh")
-                        enabled: root.authenticated && !root.loading
-                        icon.name: "view-refresh"
-                        onClicked: root.requestData()
                     }
                 }
             }
+        }
+
+        Item {
+            visible: root.configured
+            Layout.fillHeight: true
+            Layout.minimumHeight: 1
         }
     }
 }
