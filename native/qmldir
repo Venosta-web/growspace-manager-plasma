@@ -1,3 +1,2 @@
-module com.venosta.growspacewallet
 plugin growspacewalletplugin
 classname GrowspaceWalletPlugin
