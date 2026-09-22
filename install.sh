@@ -34,10 +34,11 @@ for package_dir in "$OVERVIEW_PACKAGE" "$IRRIGATION_PACKAGE" "$HISTORY_PACKAGE";
     fi
 done
 
-for command in cmake c++; do
+for command in cmake c++ kpackagetool6; do
     if ! command -v "$command" >/dev/null 2>&1; then
-        echo "Error: '$command' is required to build the KWallet bridge." >&2
-        echo "Install the development dependencies documented in README.md." >&2
+        echo "Error: '$command' is required." >&2
+        echo "On Kubuntu/Ubuntu-based Plasma systems run:" >&2
+        echo "  bash install-kubuntu.sh" >&2
         exit 1
     fi
 done
@@ -64,12 +65,12 @@ install_widget() {
     local installed_dir="$DATA_HOME/plasma/plasmoids/$plugin_id"
 
     if [[ -d "$installed_dir" ]]; then
-        echo "Removing existing development install:"
-        echo "  $installed_dir"
+        echo "Updating $plugin_id..."
         rm -rf -- "$installed_dir"
+    else
+        echo "Installing $plugin_id..."
     fi
 
-    echo "Installing $plugin_id..."
     kpackagetool6 --type Plasma/Applet --install "$package_dir"
 }
 
@@ -78,12 +79,12 @@ install_widget "$IRRIGATION_ID" "$IRRIGATION_PACKAGE"
 install_widget "$HISTORY_ID" "$HISTORY_PACKAGE"
 
 echo
-echo "Installed:"
-echo "  $OVERVIEW_ID"
-echo "  $IRRIGATION_ID"
-echo "  $HISTORY_ID"
+echo "Installed Growspace Manager Plasma widgets:"
+echo "  - Growspace Manager"
+echo "  - Growspace Manager Irrigation"
+echo "  - Growspace Manager History"
 echo
-echo "All Growspace Manager widgets reuse the same Home Assistant credentials from KWallet."
+echo "All widgets share the same Home Assistant login through KDE KWallet."
 echo
-echo "Reload existing widgets with:"
+echo "Reload Plasma with:"
 echo "  systemctl --user restart plasma-plasmashell.service"
