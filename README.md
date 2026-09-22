@@ -121,5 +121,8 @@ The chart mirrors the Growspace Manager Lovelace crop-steering data flow:
 - overlays Target VWC and the P2 maintenance dryback threshold
 - optionally plots Pore EC and Bulk EC when those sensors are configured
 - shows current VWC, irrigation pump state, next cycle, and latest EC values
+- renders the P0/P1/P2/P3 crop-steering phase strip using the same boundaries as the Lovelace card
+- renders scheduled irrigation-shot markers on the same 24-hour timeline, dimming shots that are already in the past
+- derives the P1→P2 saturation boundary from the measured VWC history and honors an actual early P3 `phase_changed_at` boundary when supplied by the backend
 
 Both applets are installed by `./install.sh`.
