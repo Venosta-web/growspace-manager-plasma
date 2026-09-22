@@ -34,6 +34,41 @@ Item {
             max = Math.max(max, points[i].value)
         }
 
+        if (metricContext && metricContext.hasContext) {
+            if (metricContext.periodic === true) {
+                var periods = [metricContext.day, metricContext.night]
+                for (var p = 0; p < periods.length; ++p) {
+                    var thresholds = periods[p]
+                    if (!thresholds)
+                        continue
+                    min = Math.min(min, Number(thresholds.dangerMin), Number(thresholds.optimalMin))
+                    max = Math.max(max, Number(thresholds.dangerMax), Number(thresholds.optimalMax))
+                }
+            } else {
+                var bands = metricContext.bands || []
+                for (var b = 0; b < bands.length; ++b) {
+                    min = Math.min(min, Number(bands[b].min))
+                    max = Math.max(max, Number(bands[b].max))
+                }
+
+                var limits = metricContext.limits || []
+                for (var l = 0; l < limits.length; ++l) {
+                    min = Math.min(min, Number(limits[l].value))
+                    max = Math.max(max, Number(limits[l].value))
+                }
+
+                var guides = metricContext.guides || []
+                for (var g = 0; g < guides.length; ++g) {
+                    min = Math.min(min, Number(guides[g].value))
+                    max = Math.max(max, Number(guides[g].value))
+                    if (guides[g].tolerance !== null && guides[g].tolerance !== undefined) {
+                        min = Math.min(min, Number(guides[g].value) - Number(guides[g].tolerance))
+                        max = Math.max(max, Number(guides[g].value) + Number(guides[g].tolerance))
+                    }
+                }
+            }
+        }
+
         var span = Math.max(max - min, minimumSpan)
         var center = (max + min) / 2
         var pad = span * 0.14
