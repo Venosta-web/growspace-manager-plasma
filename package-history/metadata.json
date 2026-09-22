@@ -1,0 +1,18 @@
+{
+  "KPlugin": {
+    "Authors": [
+      { "Name": "Venosta-web" }
+    ],
+    "Category": "System Information",
+    "Description": "Selectable 24-hour metric history chart for Growspace Manager",
+    "Icon": "office-chart-line",
+    "Id": "com.venosta.growspace-manager-history",
+    "License": "MIT",
+    "Name": "Growspace Manager History",
+    "Version": "0.1.0",
+    "Website": "https://github.com/Venosta-web/growspace-manager-plasma",
+    "BugReportUrl": "https://github.com/Venosta-web/growspace-manager-plasma/issues"
+  },
+  "X-Plasma-API-Minimum-Version": "6.0",
+  "KPackageStructure": "Plasma/Applet"
+}
