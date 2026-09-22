@@ -1,0 +1,107 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "package/metadata.json"
+      - "package-irrigation/metadata.json"
+      - "package-history/metadata.json"
+      - "RELEASE_NOTES.md"
+      - ".github/workflows/release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read release version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          versions = []
+          for path in (
+              "package/metadata.json",
+              "package-irrigation/metadata.json",
+              "package-history/metadata.json",
+          ):
+              data = json.loads(Path(path).read_text())
+              versions.append(data["KPlugin"]["Version"])
+
+          if len(set(versions)) != 1:
+              raise SystemExit(f"Widget versions are not synchronized: {versions}")
+
+          print(versions[0])
+          PY
+          )"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Check whether release already exists
+        id: existing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        shell: bash
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build release bundles
+        if: steps.existing.outputs.exists != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          STAGE="$RUNNER_TEMP/growspace-manager-plasma"
+          mkdir -p "$STAGE"
+
+          cp -a             package             package-irrigation             package-history             native             CMakeLists.txt             install.sh             install-kubuntu.sh             README.md             RELEASE_NOTES.md             LICENSE             "$STAGE/"
+
+          find "$STAGE" -type f -name 'libgrowspacewalletplugin.so' -delete
+          find "$STAGE" -type d -name build -prune -exec rm -rf {} +
+
+          chmod +x "$STAGE/install.sh" "$STAGE/install-kubuntu.sh"
+
+          tar -C "$RUNNER_TEMP" -czf growspace-manager-plasma.tar.gz growspace-manager-plasma
+          (
+            cd "$RUNNER_TEMP"
+            zip -qr "$GITHUB_WORKSPACE/growspace-manager-plasma.zip" growspace-manager-plasma
+          )
+
+          sha256sum             growspace-manager-plasma.tar.gz             growspace-manager-plasma.zip             > SHA256SUMS
+
+      - name: Create tag and GitHub release
+        if: steps.existing.outputs.exists != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if ! git rev-parse "$TAG" >/dev/null 2>&1; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "$TAG" -m "Growspace Manager Plasma $TAG"
+            git push origin "$TAG"
+          fi
+
+          gh release create "$TAG"             growspace-manager-plasma.tar.gz             growspace-manager-plasma.zip             SHA256SUMS             --title "Growspace Manager Plasma $TAG"             --notes-file RELEASE_NOTES.md
