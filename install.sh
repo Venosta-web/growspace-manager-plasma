@@ -7,19 +7,22 @@ BUILD_DIR="$ROOT/build/native"
 
 OVERVIEW_ID="com.venosta.growspace-manager-plasma"
 IRRIGATION_ID="com.venosta.growspace-manager-irrigation"
+HISTORY_ID="com.venosta.growspace-manager-history"
 
 OVERVIEW_PACKAGE="$ROOT/package"
 IRRIGATION_PACKAGE="$ROOT/package-irrigation"
+HISTORY_PACKAGE="$ROOT/package-history"
 
 OVERVIEW_NATIVE="$OVERVIEW_PACKAGE/contents/ui/native/libgrowspacewalletplugin.so"
 IRRIGATION_NATIVE="$IRRIGATION_PACKAGE/contents/ui/native/libgrowspacewalletplugin.so"
+HISTORY_NATIVE="$HISTORY_PACKAGE/contents/ui/native/libgrowspacewalletplugin.so"
 
 cleanup() {
-    rm -f -- "$OVERVIEW_NATIVE" "$IRRIGATION_NATIVE"
+    rm -f -- "$OVERVIEW_NATIVE" "$IRRIGATION_NATIVE" "$HISTORY_NATIVE"
 }
 trap cleanup EXIT
 
-for package_dir in "$OVERVIEW_PACKAGE" "$IRRIGATION_PACKAGE"; do
+for package_dir in "$OVERVIEW_PACKAGE" "$IRRIGATION_PACKAGE" "$HISTORY_PACKAGE"; do
     if [[ ! -f "$package_dir/metadata.json" ]]; then
         echo "Error: $package_dir/metadata.json is missing." >&2
         exit 1
@@ -49,9 +52,11 @@ if [[ -z "$BUILT_PLUGIN" ]]; then
     exit 1
 fi
 
-mkdir -p "$(dirname "$OVERVIEW_NATIVE")" "$(dirname "$IRRIGATION_NATIVE")"
+mkdir -p     "$(dirname "$OVERVIEW_NATIVE")"     "$(dirname "$IRRIGATION_NATIVE")"     "$(dirname "$HISTORY_NATIVE")"
+
 cp -- "$BUILT_PLUGIN" "$OVERVIEW_NATIVE"
 cp -- "$BUILT_PLUGIN" "$IRRIGATION_NATIVE"
+cp -- "$BUILT_PLUGIN" "$HISTORY_NATIVE"
 
 install_widget() {
     local plugin_id="$1"
@@ -70,13 +75,15 @@ install_widget() {
 
 install_widget "$OVERVIEW_ID" "$OVERVIEW_PACKAGE"
 install_widget "$IRRIGATION_ID" "$IRRIGATION_PACKAGE"
+install_widget "$HISTORY_ID" "$HISTORY_PACKAGE"
 
 echo
 echo "Installed:"
 echo "  $OVERVIEW_ID"
 echo "  $IRRIGATION_ID"
+echo "  $HISTORY_ID"
 echo
-echo "Both widgets reuse the same Home Assistant credentials from KWallet."
+echo "All Growspace Manager widgets reuse the same Home Assistant credentials from KWallet."
 echo
 echo "Reload existing widgets with:"
 echo "  systemctl --user restart plasma-plasmashell.service"
