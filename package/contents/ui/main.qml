@@ -25,6 +25,8 @@ PlasmoidItem {
     property string selectedGrowspaceId: ""
     property int nextMessageId: 1
     property int dataRequestId: 0
+    property int statesRequestId: 0
+    property var hassStates: ({})
     property string lastUpdated: ""
 
     readonly property string defaultHaUrl: "http://homeassistant.local:8123"
@@ -55,6 +57,7 @@ PlasmoidItem {
     property var irrigationTanks: valueAt(growspace, ["environment", "irrigation_tanks"], [])
     property var sensorTanks: filteredSensorTanks()
     property int lowTankCount: warningTankCount()
+    property var deviceChips: buildDeviceChips()
 
     Plasmoid.title: i18n("Growspace Manager")
     Plasmoid.icon: "view-statistics"
@@ -201,6 +204,237 @@ PlasmoidItem {
         return count
     }
 
+    function arrayAt(path) {
+        var value = valueAt(growspace, path, [])
+        return Array.isArray(value) ? value : []
+    }
+
+    function bundleEntityIds(path, key) {
+        var bundles = arrayAt(path)
+        var result = []
+        for (var i = 0; i < bundles.length; ++i) {
+            var id = String((bundles[i] || {})[key] || "").trim()
+            if (id.length > 0)
+                result.push(id)
+        }
+        return result
+    }
+
+    function concatUnique(a, b) {
+        var result = []
+        var seen = ({})
+        var lists = [a || [], b || []]
+        for (var l = 0; l < lists.length; ++l) {
+            for (var i = 0; i < lists[l].length; ++i) {
+                var id = String(lists[l][i] || "").trim()
+                if (id.length > 0 && !seen[id]) {
+                    seen[id] = true
+                    result.push(id)
+                }
+            }
+        }
+        return result
+    }
+
+    function stateFor(entityId) {
+        return hassStates && hassStates[entityId] ? hassStates[entityId] : null
+    }
+
+    function normalizeBinary(entity) {
+        if (!entity || entity.state === "unknown" || entity.state === "unavailable")
+            return "—"
+        if (entity.state === "on")
+            return "On"
+        if (entity.state === "off")
+            return "Off"
+        var n = Number(entity.state)
+        if (!isNaN(n))
+            return n > 0 ? "On" : "Off"
+        return displayText(entity.state)
+    }
+
+    function normalizeLight(entity, entityId) {
+        if (!entity || entity.state === "unknown" || entity.state === "unavailable")
+            return "—"
+
+        var attrs = entity.attributes || ({})
+        if (entity.state === "off")
+            return "Off"
+
+        if (attrs.brightness !== undefined && attrs.brightness !== null) {
+            var brightness = Number(attrs.brightness)
+            if (!isNaN(brightness))
+                return Math.round(brightness / 255 * 100) + "%"
+        }
+
+        var unit = String(attrs.unit_of_measurement || "")
+        var n = Number(entity.state)
+        if (!isNaN(n)) {
+            if (unit === "%" || n > 10)
+                return Math.round(n) + "%"
+            return String(Math.round(n))
+        }
+
+        if (entity.state === "on")
+            return "On"
+        return displayText(entity.state)
+    }
+
+    function normalizeFan(entity, entityId) {
+        if (!entity || entity.state === "unknown" || entity.state === "unavailable")
+            return "—"
+
+        var domain = String(entityId || "").split(".")[0]
+        var attrs = entity.attributes || ({})
+
+        if (domain === "fan") {
+            if (entity.state === "off")
+                return "Off"
+            var pct = Number(attrs.percentage)
+            if (!isNaN(pct))
+                return Math.round(pct) + "%"
+            return "On"
+        }
+
+        var n = Number(entity.state)
+        if (!isNaN(n)) {
+            if (domain === "switch" || domain === "input_boolean" || domain === "binary_sensor")
+                return n > 0 ? "On" : "Off"
+
+            var unit = String(attrs.unit_of_measurement || "")
+            if (unit === "%" || n > 10)
+                return Math.round(n) + "%"
+            return String(Math.round(n))
+        }
+
+        if (entity.state === "on")
+            return "On"
+        if (entity.state === "off")
+            return "Off"
+        return displayText(entity.state)
+    }
+
+    function normalizeClimate(entity) {
+        if (!entity || entity.state === "unknown" || entity.state === "unavailable")
+            return "—"
+
+        var attrs = entity.attributes || ({})
+        if (entity.state === "off")
+            return "Off"
+
+        var pct = Number(attrs.percentage)
+        if (!isNaN(pct))
+            return Math.round(pct) + "%"
+
+        return displayText(entity.state)
+    }
+
+    function aggregateDevice(entityIds, normalizer) {
+        if (!entityIds || entityIds.length === 0)
+            return ({ "configured": false, "value": "—", "active": false })
+
+        var values = []
+        var active = false
+        for (var i = 0; i < entityIds.length; ++i) {
+            var entity = stateFor(entityIds[i])
+            var value = normalizer(entity, entityIds[i])
+            values.push(value)
+            if (value !== "Off" && value !== "0" && value !== "0%" && value !== "—")
+                active = true
+        }
+
+        var unique = []
+        for (var j = 0; j < values.length; ++j) {
+            if (unique.indexOf(values[j]) < 0)
+                unique.push(values[j])
+        }
+
+        var display = unique.length === 1
+            ? unique[0]
+            : unique.slice(0, 3).join(" / ")
+
+        if (unique.length > 3)
+            display += "…"
+
+        return ({
+            "configured": true,
+            "value": display,
+            "active": active
+        })
+    }
+
+    function buildDeviceChips() {
+        if (!growspace)
+            return []
+
+        var env = valueAt(growspace, ["environment"], ({}))
+        var chips = []
+
+        var lightIds = concatUnique(
+            env.growlight_entities || [],
+            bundleEntityIds(["environment", "growlight_ac_infinity_devices"], "power_entity")
+        )
+        var exhaustIds = concatUnique(
+            env.exhaust_fan_entities || (env.exhaust_entity ? [env.exhaust_entity] : []),
+            bundleEntityIds(["environment", "exhaust_fan_ac_infinity_devices"], "speed_entity")
+        )
+        var circulationIds = concatUnique(
+            env.circulation_fan_entities || (env.circulation_fan_entity ? [env.circulation_fan_entity] : []),
+            bundleEntityIds(["environment", "circulation_fan_ac_infinity_devices"], "speed_entity")
+        )
+        var humidifierIds = concatUnique(
+            env.humidifier_entities || (env.humidifier_entity ? [env.humidifier_entity] : []),
+            bundleEntityIds(["environment", "humidifier_ac_infinity_devices"], "speed_entity")
+        )
+        var dehumidifierIds = concatUnique(
+            env.dehumidifier_entities || (env.dehumidifier_entity ? [env.dehumidifier_entity] : []),
+            bundleEntityIds(["environment", "dehumidifier_ac_infinity_devices"], "speed_entity")
+        )
+
+        // Future-compatible aliases: Growspace Manager does not currently model
+        // a dedicated AC/climate actuator, but if one is added to the payload
+        // this chip starts rendering without changing the UI.
+        var acIds = env.air_conditioner_entities || env.ac_entities || env.climate_entities || []
+        if (env.air_conditioner_entity)
+            acIds = concatUnique(acIds, [env.air_conditioner_entity])
+        if (env.ac_entity)
+            acIds = concatUnique(acIds, [env.ac_entity])
+        if (env.climate_entity)
+            acIds = concatUnique(acIds, [env.climate_entity])
+
+        var item = aggregateDevice(lightIds, normalizeLight)
+        if (item.configured)
+            chips.push({ "label": i18n("Light"), "icon": "weather-clear", "value": item.value, "active": item.active })
+
+        item = aggregateDevice(exhaustIds, normalizeFan)
+        if (item.configured)
+            chips.push({ "label": i18n("Exhaust"), "icon": "preferences-system-power-management", "value": item.value, "active": item.active })
+
+        item = aggregateDevice(circulationIds, normalizeFan)
+        if (item.configured)
+            chips.push({ "label": i18n("Circulation"), "icon": "view-refresh", "value": item.value, "active": item.active })
+
+        item = aggregateDevice(dehumidifierIds, normalizeFan)
+        if (item.configured)
+            chips.push({ "label": i18n("Dehumidifier"), "icon": "weather-clear-night", "value": item.value, "active": item.active })
+
+        item = aggregateDevice(humidifierIds, normalizeFan)
+        if (item.configured)
+            chips.push({ "label": i18n("Humidifier"), "icon": "weather-showers", "value": item.value, "active": item.active })
+
+        item = aggregateDevice(acIds, normalizeClimate)
+        if (item.configured)
+            chips.push({ "label": i18n("AC"), "icon": "weather-snow", "value": item.value, "active": item.active })
+
+        return chips
+    }
+
+    function requestStates() {
+        if (!authenticated)
+            return
+        statesRequestId = sendCommand({ "type": "get_states" })
+    }
+
     function formatSchedule(value) {
         if (!value)
             return i18n("Not scheduled")
@@ -306,13 +540,15 @@ PlasmoidItem {
     function applyCollection(data) {
         collection = data && typeof data === "object" ? data : ({})
         selectGrowspace()
-        loading = false
-        lastUpdated = Qt.formatTime(new Date(), "HH:mm:ss")
+        requestStates()
 
-        if (Object.keys(collection).length === 0)
+        if (Object.keys(collection).length === 0) {
+            loading = false
+            lastUpdated = Qt.formatTime(new Date(), "HH:mm:ss")
             errorMessage = i18n("Growspace Manager returned no growspaces.")
-        else if (configuredGrowspaceId.length === 0 || configuredGrowspaceId === selectedGrowspaceId)
+        } else if (configuredGrowspaceId.length === 0 || configuredGrowspaceId === selectedGrowspaceId) {
             errorMessage = ""
+        }
     }
 
     function handleMessage(message) {
@@ -357,6 +593,26 @@ PlasmoidItem {
                 errorMessage = payload.error && payload.error.message
                     ? payload.error.message
                     : i18n("Growspace data request failed.")
+            }
+            return
+        }
+
+        if (payload.type === "result" && payload.id === statesRequestId) {
+            loading = false
+            lastUpdated = Qt.formatTime(new Date(), "HH:mm:ss")
+
+            if (payload.success && Array.isArray(payload.result)) {
+                var mapped = ({})
+                for (var i = 0; i < payload.result.length; ++i) {
+                    var state = payload.result[i]
+                    if (state && state.entity_id)
+                        mapped[state.entity_id] = state
+                }
+                hassStates = mapped
+            } else if (!payload.success) {
+                errorMessage = payload.error && payload.error.message
+                    ? payload.error.message
+                    : i18n("Could not load Home Assistant device states.")
             }
         }
     }
@@ -589,6 +845,23 @@ PlasmoidItem {
                     PlasmaComponents.Label {
                         text: root.stageText
                         font.bold: true
+                    }
+                }
+
+                Flow {
+                    visible: root.deviceChips.length > 0
+                    Layout.fillWidth: true
+                    spacing: Kirigami.Units.smallSpacing
+
+                    Repeater {
+                        model: root.deviceChips
+
+                        DeviceStatusChip {
+                            iconName: modelData.icon
+                            label: modelData.label
+                            value: modelData.value
+                            active: modelData.active
+                        }
                     }
                 }
 
