@@ -7,7 +7,7 @@ namespace KWallet {
 class Wallet;
 }
 
-class WalletStore final : public QObject
+class WalletStore : public QObject
 {
     Q_OBJECT
 
