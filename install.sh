@@ -2,38 +2,44 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PLUGIN_ID="com.venosta.growspace-manager-plasma"
-PACKAGE_DIR="$ROOT/package"
 DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
-INSTALLED_DIR="$DATA_HOME/plasma/plasmoids/$PLUGIN_ID"
 BUILD_DIR="$ROOT/build/native"
-NATIVE_UI_DIR="$PACKAGE_DIR/contents/ui/native"
-GENERATED_PLUGIN="$NATIVE_UI_DIR/libgrowspacewalletplugin.so"
+
+OVERVIEW_ID="com.venosta.growspace-manager-plasma"
+IRRIGATION_ID="com.venosta.growspace-manager-irrigation"
+
+OVERVIEW_PACKAGE="$ROOT/package"
+IRRIGATION_PACKAGE="$ROOT/package-irrigation"
+
+OVERVIEW_NATIVE="$OVERVIEW_PACKAGE/contents/ui/native/libgrowspacewalletplugin.so"
+IRRIGATION_NATIVE="$IRRIGATION_PACKAGE/contents/ui/native/libgrowspacewalletplugin.so"
 
 cleanup() {
-    rm -f -- "$GENERATED_PLUGIN"
+    rm -f -- "$OVERVIEW_NATIVE" "$IRRIGATION_NATIVE"
 }
 trap cleanup EXIT
 
-if [[ ! -f "$PACKAGE_DIR/metadata.json" ]]; then
-    echo "Error: $PACKAGE_DIR/metadata.json is missing." >&2
-    exit 1
-fi
+for package_dir in "$OVERVIEW_PACKAGE" "$IRRIGATION_PACKAGE"; do
+    if [[ ! -f "$package_dir/metadata.json" ]]; then
+        echo "Error: $package_dir/metadata.json is missing." >&2
+        exit 1
+    fi
 
-if ! grep -q '"KPackageStructure"[[:space:]]*:[[:space:]]*"Plasma/Applet"' "$PACKAGE_DIR/metadata.json"; then
-    echo "Error: source package metadata is not a Plasma/Applet." >&2
-    exit 1
-fi
-
-for command in cmake c++; do
-    if ! command -v "$command" >/dev/null 2>&1; then
-        echo "Error: '$command' is required to build the KWallet bridge." >&2
-        echo "On Kubuntu install the development dependencies documented in README.md." >&2
+    if ! grep -q '"KPackageStructure"[[:space:]]*:[[:space:]]*"Plasma/Applet"' "$package_dir/metadata.json"; then
+        echo "Error: $package_dir is not a Plasma/Applet package." >&2
         exit 1
     fi
 done
 
-echo "Building native KWallet bridge..."
+for command in cmake c++; do
+    if ! command -v "$command" >/dev/null 2>&1; then
+        echo "Error: '$command' is required to build the KWallet bridge." >&2
+        echo "Install the development dependencies documented in README.md." >&2
+        exit 1
+    fi
+done
+
+echo "Building shared native KWallet bridge..."
 cmake -S "$ROOT" -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release
 cmake --build "$BUILD_DIR" --parallel
 
@@ -43,22 +49,34 @@ if [[ -z "$BUILT_PLUGIN" ]]; then
     exit 1
 fi
 
-mkdir -p "$NATIVE_UI_DIR"
-cp -- "$BUILT_PLUGIN" "$GENERATED_PLUGIN"
+mkdir -p "$(dirname "$OVERVIEW_NATIVE")" "$(dirname "$IRRIGATION_NATIVE")"
+cp -- "$BUILT_PLUGIN" "$OVERVIEW_NATIVE"
+cp -- "$BUILT_PLUGIN" "$IRRIGATION_NATIVE"
 
-if [[ -d "$INSTALLED_DIR" ]]; then
-    echo "Removing existing development install:"
-    echo "  $INSTALLED_DIR"
-    rm -rf -- "$INSTALLED_DIR"
-fi
+install_widget() {
+    local plugin_id="$1"
+    local package_dir="$2"
+    local installed_dir="$DATA_HOME/plasma/plasmoids/$plugin_id"
 
-echo "Installing Growspace Manager Plasma widget..."
-kpackagetool6 --type Plasma/Applet --install "$PACKAGE_DIR"
+    if [[ -d "$installed_dir" ]]; then
+        echo "Removing existing development install:"
+        echo "  $installed_dir"
+        rm -rf -- "$installed_dir"
+    fi
+
+    echo "Installing $plugin_id..."
+    kpackagetool6 --type Plasma/Applet --install "$package_dir"
+}
+
+install_widget "$OVERVIEW_ID" "$OVERVIEW_PACKAGE"
+install_widget "$IRRIGATION_ID" "$IRRIGATION_PACKAGE"
 
 echo
-echo "Installed: $PLUGIN_ID"
-echo "The Home Assistant login is shared through KWallet."
-echo "Each widget keeps only its own growspace/display settings."
+echo "Installed:"
+echo "  $OVERVIEW_ID"
+echo "  $IRRIGATION_ID"
 echo
-echo "Development note: reload existing widgets with:"
+echo "Both widgets reuse the same Home Assistant credentials from KWallet."
+echo
+echo "Reload existing widgets with:"
 echo "  systemctl --user restart plasma-plasmashell.service"
