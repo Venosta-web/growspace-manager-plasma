@@ -166,7 +166,6 @@ Item {
 
             onPaint: {
                 var ctx = getContext("2d")
-                ctx.reset()
                 ctx.clearRect(0, 0, width, height)
 
                 var vDomain = root.vwcDomain()
