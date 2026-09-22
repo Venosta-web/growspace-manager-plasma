@@ -407,27 +407,27 @@ PlasmoidItem {
 
         var item = aggregateDevice(lightIds, normalizeLight)
         if (item.configured)
-            chips.push({ "label": i18n("Light"), "icon": "weather-clear", "value": item.value, "active": item.active })
+            chips.push({ "label": i18n("Light"), "icon": Qt.resolvedUrl("../images/grow-light.svg"), "value": item.value, "active": item.active })
 
         item = aggregateDevice(exhaustIds, normalizeFan)
         if (item.configured)
-            chips.push({ "label": i18n("Exhaust"), "icon": "preferences-system-power-management", "value": item.value, "active": item.active })
+            chips.push({ "label": i18n("Exhaust"), "icon": Qt.resolvedUrl("../images/exhaust-fan.svg"), "value": item.value, "active": item.active })
 
         item = aggregateDevice(circulationIds, normalizeFan)
         if (item.configured)
-            chips.push({ "label": i18n("Circulation"), "icon": "view-refresh", "value": item.value, "active": item.active })
+            chips.push({ "label": i18n("Circulation"), "icon": Qt.resolvedUrl("../images/circulation-fan.svg"), "value": item.value, "active": item.active })
 
         item = aggregateDevice(dehumidifierIds, normalizeFan)
         if (item.configured)
-            chips.push({ "label": i18n("Dehumidifier"), "icon": "weather-clear-night", "value": item.value, "active": item.active })
+            chips.push({ "label": i18n("Dehumidifier"), "icon": Qt.resolvedUrl("../images/dehumidifier.svg"), "value": item.value, "active": item.active })
 
         item = aggregateDevice(humidifierIds, normalizeFan)
         if (item.configured)
-            chips.push({ "label": i18n("Humidifier"), "icon": "weather-showers", "value": item.value, "active": item.active })
+            chips.push({ "label": i18n("Humidifier"), "icon": Qt.resolvedUrl("../images/humidifier.svg"), "value": item.value, "active": item.active })
 
         item = aggregateDevice(acIds, normalizeClimate)
         if (item.configured)
-            chips.push({ "label": i18n("AC"), "icon": "weather-snow", "value": item.value, "active": item.active })
+            chips.push({ "label": i18n("AC"), "icon": Qt.resolvedUrl("../images/air-conditioner.svg"), "value": item.value, "active": item.active })
 
         return chips
     }
@@ -918,7 +918,7 @@ PlasmoidItem {
                 spacing: 7
 
                 Kirigami.Icon {
-                    source: "weather-showers"
+                    source: Qt.resolvedUrl("../images/irrigation.svg")
                     implicitWidth: 16
                     implicitHeight: 16
                     opacity: 0.62
