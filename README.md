@@ -16,6 +16,7 @@ The widget can:
 - migrate the old per-widget plaintext token into KWallet on first launch
 - select a configured growspace, or automatically use the first available growspace
 - show temperature, humidity, VPD, plant count, stage/week, day/night state and irrigation information
+- automatically show sensor-backed irrigation tanks with animated liquid level, low-level warnings, capacity, depletion state and estimated time remaining
 - show live connection/authentication/error state
 - refresh automatically on a configurable interval
 - render as both a compact Plasma panel widget and an expanded desktop/popup widget
